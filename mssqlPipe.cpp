@@ -1332,7 +1332,7 @@ int wmain(int argc, wchar_t* argv[])
 {
 	CoInit comInit;
 	
-	std::wcerr << L"\nmssqlPipe v1.0\n" << std::endl;
+	std::wcerr << L"\nmssqlPipe v1.0.0\n" << std::endl;
 	if (argc < 2) {
 		showUsage();
 		return E_INVALIDARG;
