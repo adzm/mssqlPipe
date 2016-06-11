@@ -312,12 +312,12 @@ struct VirtualDevice
 		
 	VDConfig config;
 	
-	std::string instance;
-	std::string name;
+	std::wstring instance;
+	std::wstring name;
 
 	VirtualDevice(std::string instance, std::string name)
-		: instance(std::move(instance))
-		, name(std::move(name))
+		: instance(widen(instance))
+		, name(widen(name))
 		, config({ 1 })
 	{}
 
@@ -356,7 +356,7 @@ struct VirtualDevice
 			return hr;
 		}
 
-		const char* wInstance = instance.empty() ? nullptr : (const char*)instance.c_str();
+		const wchar_t* wInstance = instance.empty() ? nullptr : (const wchar_t*)instance.c_str();
 
 		hr = pSet->CreateEx(wInstance, name.c_str(), &config);
 		if (!SUCCEEDED(hr)) {
@@ -412,13 +412,13 @@ std::string EscapeConnectionStringValue(const std::string& val)
 	}
 	while (pos < val.end()) {
 		switch (*pos++) {
-		case L';':
+		case ';':
 			++otherCount;
 			break;
-		case L'\'':
+		case '\'':
 			++singleCount;
 			break;
-		case L'\"':
+		case '\"':
 			++doubleCount;
 			break;
 		}
@@ -433,9 +433,9 @@ std::string EscapeConnectionStringValue(const std::string& val)
 	std::string esc;
 	esc.reserve(val.length() + 2 + (totalCount * 2));
 
-	char c = L'\'';
+	char c = '\'';
 	if (singleCount && !doubleCount) {
-		c = L'\"';
+		c = '\"';
 	}
 	esc.push_back(c);
 
@@ -649,9 +649,9 @@ HRESULT RunPrepareRestoreDatabase(VirtualDevice& vd, params p, InputFile& inputF
 
 			for (; pRs && !pRs->eof; pRs->MoveNext()) {
 				DbFile f;
-				f.logicalName = pRs->Fields->Item["LogicalName"]->Value.bstrVal;
-				f.physicalName = pRs->Fields->Item["PhysicalName"]->Value.bstrVal;
-				f.type = pRs->Fields->Item["Type"]->Value.bstrVal;
+				f.logicalName = narrow(pRs->Fields->Item["LogicalName"]->Value.bstrVal);
+				f.physicalName = narrow(pRs->Fields->Item["PhysicalName"]->Value.bstrVal);
+				f.type = narrow(pRs->Fields->Item["Type"]->Value.bstrVal);
 
 				fileList.push_back(f);
 			}
@@ -712,8 +712,8 @@ select
 
 			if (!pRs->eof) {
 				
-				dataPath = pRs->Fields->Item["DefaultData"]->Value.bstrVal;
-				logPath = pRs->Fields->Item["DefaultLog"]->Value.bstrVal;
+				dataPath = narrow(pRs->Fields->Item["DefaultData"]->Value.bstrVal);
+				logPath = narrow(pRs->Fields->Item["DefaultLog"]->Value.bstrVal);
 
 				traceAdoErrors(pCon);
 			}
@@ -839,11 +839,11 @@ std::string BuildRestoreCommand(params p, std::string dataPath, std::string logP
 		logPath = p.to;
 	}
 
-	if (!dataPath.empty() && dataPath.back() != L'\\') {
-		dataPath += L'\\';
+	if (!dataPath.empty() && dataPath.back() != '\\') {
+		dataPath += '\\';
 	}
-	if (!logPath.empty() && logPath.back() != L'\\') {
-		logPath += L'\\';
+	if (!logPath.empty() && logPath.back() != '\\') {
+		logPath += '\\';
 	}
 
 	std::ostringstream o;
@@ -1089,7 +1089,7 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::string namedPipe, 
 		return E_FAIL;
 	}
 	
-	HANDLE hPipe = ::CreateNamedPipe(namedPipe.c_str()
+	HANDLE hPipe = ::CreateNamedPipe(widen(namedPipe).c_str()
 		, hOutput ? PIPE_ACCESS_INBOUND : PIPE_ACCESS_OUTBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE
 		, PIPE_TYPE_BYTE | PIPE_WAIT
 		, 1
@@ -1099,7 +1099,7 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::string namedPipe, 
 		, nullptr
 	);
 
-	HANDLE hStderrPipe = ::CreateNamedPipe(stderrPipe.c_str()
+	HANDLE hStderrPipe = ::CreateNamedPipe(widen(stderrPipe).c_str()
 		, PIPE_ACCESS_INBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE
 		, PIPE_TYPE_BYTE | PIPE_WAIT
 		, 1
@@ -1112,15 +1112,15 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::string namedPipe, 
 	// launch
 	HANDLE hProcess = nullptr;
 	{
-		std::string args = MakeParams(p);
+		std::wstring args = widen(MakeParams(p));
 		SHELLEXECUTEINFO sei = { sizeof(sei) };
 
-		char thisModuleFileName[MAX_PATH];
+		wchar_t thisModuleFileName[MAX_PATH];
 		::GetModuleFileName(nullptr, thisModuleFileName, _countof(thisModuleFileName));
 
 		sei.fMask = 0 | SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
 		sei.hwnd = NULL;
-		sei.lpVerb = "runas";
+		sei.lpVerb = L"runas";
 		sei.lpFile = thisModuleFileName;
 		sei.lpParameters = args.c_str();
 		sei.lpDirectory = NULL;
@@ -1248,10 +1248,10 @@ HRESULT Run(params p)
 	HANDLE hStdErr = ::GetStdHandle(STD_ERROR_HANDLE);
 
 	if (0 == p.to.find(R"(\\.\pipe\mssqlPipe_)")) {
-		::WaitNamedPipe(p.to.c_str(), NMPWAIT_USE_DEFAULT_WAIT);
+		::WaitNamedPipe(widen(p.to).c_str(), NMPWAIT_USE_DEFAULT_WAIT);
 	}
 	if (0 == p.from.find(R"(\\.\pipe\mssqlPipe_)")) {
-		::WaitNamedPipe(p.from.c_str(), NMPWAIT_USE_DEFAULT_WAIT);
+		::WaitNamedPipe(widen(p.from).c_str(), NMPWAIT_USE_DEFAULT_WAIT);
 	}
 
 	if (p.isBackup()) {
@@ -1259,7 +1259,7 @@ HRESULT Run(params p)
 			hFile = hStdOut;
 		}
 		else {
-			hFile = ::CreateFile(p.to.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+			hFile = ::CreateFile(widen(p.to).c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 			if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 				DWORD ret = ::GetLastError();
 				std::cerr << ret << ": Failed to open " << p.to << std::endl;
@@ -1268,8 +1268,8 @@ HRESULT Run(params p)
 		}
 	}
 	else if (p.isRestore()) {
-		if (!p.to.empty() && INVALID_FILE_ATTRIBUTES == ::GetFileAttributes(p.to.c_str())) {
-			int ret = ::SHCreateDirectoryEx(nullptr, p.to.c_str(), nullptr);
+		if (!p.to.empty() && INVALID_FILE_ATTRIBUTES == ::GetFileAttributes(widen(p.to).c_str())) {
+			int ret = ::SHCreateDirectoryEx(nullptr, widen(p.to).c_str(), nullptr);
 			if (ret && ret != ERROR_FILE_EXISTS && ret != ERROR_ALREADY_EXISTS) {
 				std::cerr << ret << ": Failed to create restore to path. Continuing (SQL Server may have access)... " << p.from << std::endl;
 			}
@@ -1278,7 +1278,7 @@ HRESULT Run(params p)
 			hFile = hStdIn;
 		}
 		else {
-			hFile = ::CreateFile(p.from.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			hFile = ::CreateFile(widen(p.from).c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 			if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 				DWORD ret = ::GetLastError();
 				std::cerr << ret << ": Failed to open " << p.from << std::endl;
@@ -1292,7 +1292,7 @@ HRESULT Run(params p)
 				hFile = hStdIn;
 			}
 			else {
-				hFile = ::CreateFile(p.from.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+				hFile = ::CreateFile(widen(p.from).c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 				if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 					DWORD ret = ::GetLastError();
 					std::cerr << ret << ": Failed to open " << p.from << std::endl;
@@ -1305,7 +1305,7 @@ HRESULT Run(params p)
 				hFile = hStdOut;
 			}
 			else {
-				hFile = ::CreateFile(p.to.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+				hFile = ::CreateFile(widen(p.to).c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 				if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 					DWORD ret = ::GetLastError();
 					std::cerr << ret << ": Failed to open " << p.to << std::endl;
@@ -1334,14 +1334,14 @@ HRESULT Run(params p)
 			std::string namedPipe;
 			{
 				std::ostringstream o;
-				o << R"(\\.\pipe\mssqlPipe_)" << "stdio_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << "_" << unique;
+				o << R"(\\.\pipe\mssqlPipe_)" << "stdio_" << std::setfill('0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << "_" << unique;
 				namedPipe = o.str();
 			}
 
 			std::string stderrPipe;
 			{
 				std::ostringstream o;
-				o << R"(\\.\pipe\mssqlPipe_)" << "stderr_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << "_" << unique;
+				o << R"(\\.\pipe\mssqlPipe_)" << "stderr_" << std::setfill('0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << "_" << unique;
 				stderrPipe = o.str();
 			}
 
@@ -1404,20 +1404,11 @@ int wmain(int argc, wchar_t* wargv[])
 {
 	CoInit comInit;
 
-	std::vector<std::string> u8args;
+	std::vector<std::string> u8args = make_argv(argc, wargv);
 
-	for (int i = 0; i < argc; ++i)
-	{
-		u8args.push_back(narrow(wargv[i]));
-	}
+	auto u8argptrs = make_argv_ptrs(u8args);
 
-	std::vector<const char*> argptrs;
-
-	for (const auto& arg : u8args) {
-		argptrs.push_back(arg.c_str());
-	}
-
-	const char** argv[] = (const char**)&argptrs[0];
+	const char** argv = (const char**)&u8argptrs[0];
 
 #ifdef _DEBUG
 	bool waitForDebugger = true;
@@ -1456,7 +1447,7 @@ int wmain(int argc, wchar_t* wargv[])
 
 	if (!p.flags.tee.empty()) {
 		if (0 == p.flags.tee.find(R"(\\.\pipe\mssqlPipe_)")) {
-			::WaitNamedPipe(p.flags.tee.c_str(), NMPWAIT_USE_DEFAULT_WAIT);
+			::WaitNamedPipe(widen(p.flags.tee).c_str(), NMPWAIT_USE_DEFAULT_WAIT);
 		}
 		pTeeAndRedirectCerr = std::make_unique<TeeAndRedirect_cerr>(p.flags.tee.c_str());
 

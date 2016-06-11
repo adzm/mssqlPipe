@@ -32,7 +32,7 @@ struct params
 
 	paramflags flags;
 
-	friend std::wostream& operator<<(std::wostream& o, const params& p);
+	friend std::ostream& operator<<(std::ostream& o, const params& p);
 
 	DWORD timeout = 10 * 1000;
 

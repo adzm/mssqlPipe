@@ -129,7 +129,7 @@ inline std::string narrow(const std::wstring& str)
 
 inline std::string narrow(const wchar_t* sz)
 {
-	return narrow(sz, strlen(sz));
+	return narrow(sz, wcslen(sz));
 }
 
 
@@ -141,19 +141,19 @@ inline std::string ToLower(std::string str)
 
 inline int icmp(const std::string& a, const std::string& b)
 {
-	return _wcsicmp(a.c_str(), b.c_str());
+	return _stricmp(a.c_str(), b.c_str());
 }
 inline int icmp(const char* a, const std::string& b)
 {
-	return _wcsicmp(a, b.c_str());
+	return _stricmp(a, b.c_str());
 }
 inline int icmp(const std::string& a, const char* b)
 {
-	return _wcsicmp(a.c_str(), b);
+	return _stricmp(a.c_str(), b);
 }
 inline int icmp(const char* a, const char* b)
 {
-	return _wcsicmp(a, b);
+	return _stricmp(a, b);
 }
 
 template<typename A, typename B>
@@ -171,17 +171,6 @@ struct iless_predicate
 	}
 };
 
-inline std::wostream& operator<<(std::wostream& o, const _bstr_t& bstr)
-{
-	const char* str = (const char*)bstr;
-	if (str) {
-		return o << str;
-	}
-	else {
-		return o;
-	}
-}
-
 inline std::ostream& operator<<(std::ostream& o, const _bstr_t& bstr)
 {
 	const char* str = (const char*)bstr;
@@ -197,7 +186,7 @@ inline std::ostream& operator<<(std::ostream& o, const _bstr_t& bstr)
 
 inline std::string escape(std::string str)
 {
-	size_t quoteCount = count(begin(str), end(str), L'\'');
+	size_t quoteCount = count(begin(str), end(str), '\'');
 
 	if (!quoteCount) {
 		return str;
@@ -208,25 +197,65 @@ inline std::string escape(std::string str)
 
 	for (auto c : str) {
 		q.push_back(c);
-		if (c == L'\'') {
-			q.push_back(L'\'');
+		if (c == '\'') {
+			q.push_back('\'');
 		}
 	}
 
 	return q;
 }
 
+/****/
+
+inline std::vector<std::string> make_argv(int argc, wchar_t** argv)
+{
+	std::vector<std::string> args;
+	args.reserve(argc);
+	for (int i = 0; i < argc; ++i) {
+		args.push_back(narrow(argv[i]));
+	}
+	return args;
+}
+
+inline std::vector<std::string> make_argv(const char* cmdLine)
+{
+	auto wcmdLine = widen(cmdLine);
+	int argc = 0;
+	wchar_t** argv = ::CommandLineToArgvW(wcmdLine.c_str(), &argc);
+
+	std::vector<std::string> args;
+	args.reserve(argc);
+
+	for (int i = 0; i < argc; ++i) {
+		args.push_back(narrow(argv[i]));
+	}
+
+	::LocalFree(argv);
+
+	return args;
+}
+
+inline std::vector<const char*> make_argv_ptrs(const std::vector<std::string>& args)
+{
+	std::vector<const char*> argv;
+	argv.reserve(args.size());
+
+	for (auto&& arg : args) {
+		argv.push_back(arg.c_str());
+	}
+
+	return argv;
+}
 
 /****/
 
 inline std::string make_guid()
 {
-	std::string guid;
+	wchar_t guid[39] = { 0 };
 	GUID guidRaw = { 0 };
 	::CoCreateGuid(&guidRaw);
-	guid.resize(38);
-	::StringFromGUID2(guidRaw, &guid[0], guid.size() + 1);
-	return guid;
+	::StringFromGUID2(guidRaw, guid, _countof(guid));
+	return narrow(guid, _countof(guid) - 1);
 }
 
 template<typename _IIID>

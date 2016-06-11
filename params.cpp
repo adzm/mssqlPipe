@@ -42,47 +42,30 @@ inline std::string escapeCommandLine(std::string str)
 		return str;
 	}
 
-	size_t quoteCount = count(begin(str), end(str), L'\"');
+	size_t quoteCount = count(begin(str), end(str), '\"');
 
 	std::string q;
 	q.reserve(2 + str.size() + (quoteCount * 3));
 
-	q += L'\"';
+	q += '\"';
 
 	for (auto c : str) {
 		q.push_back(c);
-		if (c == L'\"') {
+		if (c == '\"') {
 			// triple quotes should work even outside of another quoted field
 			q += "\"\"\"";
 		}
 	}
 
-	q += L'\"';
+	q += '\"';
 
 	return q;
 }
 
 std::string makeCommandLineDiff(std::string cmdLineA, std::string cmdLineB)
 {
-	auto extractArgs = [](std::string str) {
-		std::vector<std::string> args;
-
-		int argc = 0;
-		char** argv = ::CommandLineToArgvW(str.c_str(), &argc);
-
-		args.reserve(argc);
-
-		for (int i = 0; i < argc; ++i) {
-			args.push_back(argv[i]);
-		}
-
-		::LocalFree(argv);
-
-		return args;
-	};
-
-	auto argsA = extractArgs(cmdLineA);
-	auto argsB = extractArgs(cmdLineB);
+	auto argsA = make_argv(cmdLineA.c_str());
+	auto argsB = make_argv(cmdLineB.c_str());
 
 	std::string result;
 	std::string postResult;
@@ -285,7 +268,7 @@ params ParseSqlParams(int argc, const char* argv[], bool quiet)
 					++arg;
 
 					// parse creds into username and password
-					size_t split = p.as.find(L':');
+					size_t split = p.as.find(':');
 					if (split == std::string::npos) {
 						p.username = p.as;
 					}
@@ -494,7 +477,7 @@ params ParseParams(int argc, const char* argv[], bool quiet)
 	args.push_back(argv[0]);
 	for (int i = 1; i < argc; ++i) {
 		const char* arg = argv[i];
-		if (arg && arg[0] && arg[1] && arg[0] == L'-' && arg[1] == L'-') {
+		if (arg && arg[0] && arg[1] && arg[0] == '-' && arg[1] == '-') {
 			if (iequals(arg, "--noelevate")) {
 				flags.noelevate = true;
 			} else if (iequals(arg, "--test")) {
@@ -625,7 +608,7 @@ std::string MakeParams(const params& p)
 	return commandLine;
 }
 
-std::wostream& operator<<(std::wostream& o, const params& p)
+std::ostream& operator<<(std::ostream& o, const params& p)
 {
 	o << "(";
 	if (S_OK != p.hr) {
@@ -671,32 +654,20 @@ std::wostream& operator<<(std::wostream& o, const params& p)
 bool TestParseParams()
 {
 	auto test = [](const char* cmdLine) {
-		int argc = 0;
-		char** argv = ::CommandLineToArgvW(cmdLine, &argc);
+		auto args = make_argv(cmdLine);
+		auto argptrs = make_argv_ptrs(args);
 
-		if (!argv) {
-			return false;
-		}
-
-		auto p = ParseParams(argc, argv, true);
-
-		::LocalFree(argv);
+		auto p = ParseParams(argptrs.size(), &argptrs[0], true);
 
 		auto rebuilt = "mssqlPipe " + MakeParams(p);
 
 		bool succeeded = SUCCEEDED(p.hr);
 		bool matches = iequals(cmdLine, rebuilt) || iequals("(`database`, ``)", makeCommandLineDiff(cmdLine, rebuilt));
 
-		argc = 0;
-		argv = ::CommandLineToArgvW(rebuilt.c_str(), &argc);
+		auto args_rebuilt = make_argv(cmdLine);
+		auto argptrs_rebuilt = make_argv_ptrs(args_rebuilt);
 
-		if (!argv) {
-			return false;
-		}
-
-		auto p_rebuilt = ParseParams(argc, argv, true);
-
-		::LocalFree(argv);
+		auto p_rebuilt = ParseParams(argptrs_rebuilt.size(), &argptrs_rebuilt[0], true);
 
 		auto p_rebuilt_rebuilt = "mssqlPipe " + MakeParams(p_rebuilt);
 
