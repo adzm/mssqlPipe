@@ -62,4 +62,4 @@ bool TestParseParams();
 #endif
 
 params ParseParams(int argc, wchar_t* argv[], bool quiet);
-
+std::wstring MakeParams(const params& p);

@@ -1151,7 +1151,102 @@ HRESULT RunPipe(VirtualDevice& vd, params p, HANDLE hFile)
 	}
 
 	return hr;
-}		
+}	
+
+HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe)
+{
+	if (!hInput && !hOutput) {
+		std::wcerr << L"Invalid command for elevation" << std::endl;
+		return E_FAIL;
+	}
+	
+	HANDLE hPipe = ::CreateNamedPipe(namedPipe.c_str()
+		, hOutput ? PIPE_ACCESS_INBOUND : PIPE_ACCESS_OUTBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE
+		, PIPE_TYPE_BYTE | PIPE_WAIT
+		, 1
+		, 0x10000
+		, 0x10000
+		, 10000
+		, nullptr
+	);
+
+	// launch
+	HANDLE hProcess = nullptr;
+	{
+		std::wstring args = MakeParams(p);
+		SHELLEXECUTEINFO sei = { sizeof(sei) };
+
+		wchar_t thisModuleFileName[MAX_PATH];
+		::GetModuleFileName(nullptr, thisModuleFileName, _countof(thisModuleFileName));
+
+		sei.fMask = 0 | SEE_MASK_NOCLOSEPROCESS;
+		sei.hwnd = NULL;
+		sei.lpVerb = L"runas";
+		sei.lpFile = thisModuleFileName;
+		sei.lpParameters = args.c_str();
+		sei.lpDirectory = NULL;
+		sei.nShow = SW_SHOWNORMAL;
+
+		::ShellExecuteEx(&sei);
+
+		if ((int)sei.hInstApp <= 32) {
+			::CloseHandle(sei.hProcess);
+			::CloseHandle(hPipe);
+			return E_FAIL;
+		}
+
+		hProcess = sei.hProcess;
+	}
+	
+	BOOL connected = ::ConnectNamedPipe(hPipe, NULL) ? TRUE : (::GetLastError() == ERROR_PIPE_CONNECTED);
+
+	if (!connected) {
+		DWORD lastError = ::GetLastError();
+
+		::CloseHandle(hPipe);
+
+		return lastError ? lastError : E_FAIL;
+	}
+
+	if (!hOutput) {
+		hOutput = hPipe;
+	}
+	else if (!hInput) {
+		hInput = hPipe;
+	}
+
+	// run!
+	{
+		constexpr size_t buflen = 0x10000;
+		std::unique_ptr<BYTE[]> buf(new BYTE[buflen]);
+
+		__int64 totalBytes = 0;
+		for (;;) {
+			DWORD dwBytesRead = 0;
+			if (!::ReadFile(hInput, buf.get(), buflen, &dwBytesRead, nullptr)) {
+				DWORD err = ::GetLastError();
+				break;
+			}
+			DWORD dwBytesWritten = 0;
+			if (!::WriteFile(hOutput, buf.get(), dwBytesRead, &dwBytesWritten, nullptr)) {
+				DWORD err = ::GetLastError();
+				break;
+			}
+			totalBytes += dwBytesWritten;
+		}
+	}
+
+	::CloseHandle(hPipe);
+
+	::WaitForSingleObject(hProcess, 5000);
+
+	DWORD dwExitCode = 0;
+	::GetExitCodeProcess(hProcess, &dwExitCode);
+
+	::CloseHandle(hProcess);
+
+	return dwExitCode;
+}
 
 HRESULT Run(params p)
 {
@@ -1160,6 +1255,13 @@ HRESULT Run(params p)
 	HANDLE hStdIn = ::GetStdHandle(STD_INPUT_HANDLE);
 	HANDLE hStdOut = ::GetStdHandle(STD_OUTPUT_HANDLE);
 	HANDLE hStdErr = ::GetStdHandle(STD_ERROR_HANDLE);
+
+	if (0 == p.to.find(LR"(\\.\pipe\mssqlPipe_)")) {
+		::WaitNamedPipe(p.to.c_str(), NMPWAIT_USE_DEFAULT_WAIT);
+	}
+	if (0 == p.from.find(LR"(\\.\pipe\mssqlPipe_)")) {
+		::WaitNamedPipe(p.from.c_str(), NMPWAIT_USE_DEFAULT_WAIT);
+	}
 
 	if (p.isBackup()) {
 		if (p.to.empty()) {
@@ -1232,6 +1334,43 @@ HRESULT Run(params p)
 	VirtualDevice vd(p.instance, p.device);
 	hr = vd.Create();
 	if (!SUCCEEDED(hr)) {
+		if (E_ACCESSDENIED == hr && !p.flags.noelevate) {
+			std::wcerr << L"Run failed with E_ACCESSDENIED; attempting to elevate and redirect io..." << std::endl;
+
+
+			std::wstring namedPipe;
+			{
+				std::wostringstream o;
+				o << LR"(\\.\pipe\mssqlPipe_)" << p.instance << p.device;
+				namedPipe = o.str();
+			}
+
+			HANDLE hInput = nullptr;
+			HANDLE hOutput = nullptr;
+			
+			if (p.isBackup()) {
+				hOutput = hFile;
+				p.to = namedPipe;
+			}
+			else if (p.isRestore()) {
+				hInput = hFile;
+				p.from = namedPipe;
+			}
+			else if (p.isPipe()) {
+				if (iequals(p.subcommand, L"to")) {
+					hInput = hFile;
+					p.from = namedPipe;
+				} else if (iequals(p.subcommand, L"from")) {
+					hOutput = hFile;
+					p.to = namedPipe;
+				}
+			}
+
+			hr = Elevate(p, hInput, hOutput, namedPipe);
+			if (!SUCCEEDED(hr)) {
+				return hr;
+			}
+		}
 		return hr;
 	}
 	
@@ -1256,6 +1395,8 @@ HRESULT Run(params p)
 
 	return hr;
 }
+
+
 
 
 /****/
