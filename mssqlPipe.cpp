@@ -43,9 +43,13 @@ std::mutex outputMutex_;
 
 ///
 
-inline std::wstring escape(const std::wstring& str)
+inline std::wstring escape(std::wstring str)
 {
 	size_t quoteCount = count(begin(str), end(str), L'\'');
+
+	if (!quoteCount) {
+		return str;
+	}
 	
 	std::wstring q;
 	q.reserve(str.size() + quoteCount);
@@ -56,6 +60,32 @@ inline std::wstring escape(const std::wstring& str)
 			q.push_back(L'\'');
 		}
 	}
+
+	return q;
+}
+
+inline std::wstring escapeCommandLine(std::wstring str)
+{
+	if (std::wstring::npos == str.find_first_of(L" \"")) {
+		return str;
+	}
+
+	size_t quoteCount = count(begin(str), end(str), L'\"');
+
+	std::wstring q;
+	q.reserve(2 + str.size() + (quoteCount * 3));
+
+	q += L'\"';
+
+	for (auto c : str) {
+		q.push_back(c);
+		if (c == L'\"') {
+			// triple quotes should work even outside of another quoted field
+			q += L"\"\"\"";
+		}
+	}
+
+	q += L'\"';
 
 	return q;
 }
@@ -99,6 +129,174 @@ struct iless_predicate
 		return icmp(std::forward<A>(a), std::forward<B>(b)) < 0;
 	}
 };
+
+std::wstring makeCommandLineDiff(std::wstring cmdLineA, std::wstring cmdLineB)
+{
+	auto extractArgs = [](std::wstring str) {
+		std::vector<std::wstring> args;
+
+		int argc = 0;
+		wchar_t** argv = ::CommandLineToArgvW(str.c_str(), &argc);
+
+		args.reserve(argc);
+
+		for (int i = 0; i < argc; ++i) {
+			args.push_back(argv[i]);
+		}
+
+		::LocalFree(argv);
+
+		return args;
+	};
+
+	auto argsA = extractArgs(cmdLineA);
+	auto argsB = extractArgs(cmdLineB);
+	
+	std::wstring result;
+	std::wstring postResult;
+
+	auto itA = argsA.begin();
+	auto itB = argsB.begin();
+	
+	while (itA < argsA.end() || itB < argsB.end()) {
+
+		std::wstring a;
+		std::wstring b;
+
+		if (itA < argsA.end()) {
+			a = *itA;
+		}
+
+		if (itB < argsB.end()) {
+			b = *itB;
+		}
+
+		if (iequals(a, b)) {
+			++itA;
+			++itB;
+			//result += L".";
+			continue;
+		}
+		else {
+			break;
+		}
+	}
+
+	if (itA == argsA.end() && itB == argsB.end()) {
+		return result;
+	}
+
+	// we are at a diff!
+
+	// now find the tail
+	auto itA_end = argsA.end() - 1;
+	auto itB_end = argsB.end() - 1;
+	
+	while (itA_end >= itA && itB_end >= itB) {
+
+		std::wstring a = *itA_end;
+		std::wstring b = *itB_end;
+
+		if (iequals(a, b)) {
+			--itA_end;
+			--itB_end;
+			//postResult += L".";
+			continue;
+		}
+		else {
+			break;
+		}
+	}
+
+	result += L"(`";
+	while (itA <= itA_end) {
+		result += *itA;
+		if (itA < itA_end) {
+			result += L" ";
+		}
+		++itA;
+	}
+	result += L"`, `";
+	while (itB <= itB_end) {
+		result += *itB;
+		if (itB < itB_end) {
+			result += L" ";
+		}
+		++itB;
+	}
+	result += L"`)";
+
+	result += postResult;
+
+	return result;
+}
+
+//std::wstring makeInlineDiff(std::wstring l, std::wstring r)
+//{
+//	auto charEqual = [](wchar_t a, wchar_t b) {
+//		if (a == b) {
+//			return true;
+//		} else if (iswascii(a) && iswascii(b)) {
+//			return towlower(a) == towlower(b);
+//		} else {
+//			return a == b;
+//		}
+//	};
+//
+//	size_t ix = 0;
+//
+//	// find the ix of first diff
+//	for (ix = 0; ix < l.size() && ix < r.size(); ++ix) {
+//		if (!charEqual(l[ix], r[ix])) {
+//			break;
+//		}
+//	}
+//
+//	size_t ixFirstDiff = ix;
+//
+//	// find the ix of last diff
+//	for (ix = 0; ix < l.size() && ix < r.size(); ++ix) {
+//		if (!charEqual(l[l.size() - 1 - ix], r[r.size() - 1 - ix])) {
+//			break;
+//		}
+//	}
+//
+//	size_t ixLastDiff = ix; // offset from .size()
+//
+//	//
+//	
+//	// strip equal sections from end
+//	if (ixLastDiff != 0) {
+//		l = l.substr(0, l.size() - 1 - ix);
+//		r = r.substr(0, r.size() - 1 - ix);
+//	}
+//
+//	if (ixFirstDiff != 0) {
+//		l = l.substr(ixFirstDiff);
+//		r = r.substr(ixFirstDiff);
+//	}
+//
+//	// now we have a center section to process
+//	std::wstring inlineDiff;
+//	{
+//
+//	}
+//
+//	{
+//		std::wstring str;
+//		if (ixFirstDiff != 0) {
+//			str += L"...";
+//		}
+//
+//		str += inlineDiff;
+//
+//		if (ixLastDiff != 0) {
+//			str += L"...";
+//		}
+//
+//		return str;
+//	}
+//}
 
 template<typename _IIID>
 void ComIssueError(HRESULT hr, const _com_ptr_t<_IIID>& p)
@@ -294,10 +492,12 @@ struct params
 	std::wstring from;
 	std::wstring to;
 
+	std::wstring as;
 	std::wstring username;
 	std::wstring password;
 
 	HRESULT hr = S_OK;
+	std::wstring errorMessage;
 
 	friend std::wostream& operator<<(std::wostream& o, const params& p)
 	{
@@ -323,6 +523,9 @@ struct params
 		if (!p.to.empty()) {
 			o << L"to=" << p.to << L";";
 		}
+		if (!p.as.empty()) {
+			o << L"as=" << p.as << L";";
+		}
 		if (!p.username.empty()) {
 			o << L"username=" << p.username << L";";
 		}
@@ -330,7 +533,9 @@ struct params
 			o << L"password=" << p.password << L";";
 		}
 		
-		o << L"device=" << p.device;
+		if (p.isPipe()) {
+			o << L"device=" << p.device << L";";
+		}
 
 		o << L")";
 		return o;
@@ -1514,23 +1719,39 @@ HRESULT Run(params p)
 	return hr;
 }
 
-params ParseParams(int argc, wchar_t* argv[])
+params ParseParams(int argc, wchar_t* argv[], bool quiet)
 {
 	params p;
-	
-	std::wcerr << L"\nmssqlPipe v1.0.1\n" << std::endl;
 
 	auto invalidArgs = [&](const wchar_t* msg, const wchar_t* arg = nullptr, HRESULT hr = E_INVALIDARG)
 	{
-		std::wcerr << msg;
+		if (!quiet) {
+			std::wcerr << msg;
 
-		if (arg && *arg) {
-			std::wcerr << L" `" << arg << L"`";
+			if (arg && *arg) {
+				std::wcerr << L" `" << arg << L"`";
+			}
+
+			std::wcerr << std::endl;
+
+			showUsage();
 		}
 
-		std::wcerr << std::endl;
+		if (msg && *msg) {
+			if (!p.errorMessage.empty()) {
+				p.errorMessage += L"\r\n";
+			}
+			p.errorMessage += msg;
+			if (arg && *arg) {
+				p.errorMessage += L" `";
+				p.errorMessage += arg;
+				p.errorMessage += L"`";
+			}
+		}
 
-		showUsage();
+		if (!hr) {
+			hr = E_FAIL;
+		}
 
 		p.hr = hr;
 
@@ -1538,8 +1759,9 @@ params ParseParams(int argc, wchar_t* argv[])
 	};
 
 	if (argc < 2) {
-		showUsage();
-		p.hr = E_INVALIDARG;
+		if (!quiet) {
+			showUsage();
+		}
 		return p;
 	}
 
@@ -1614,17 +1836,17 @@ params ParseParams(int argc, wchar_t* argv[])
 			if (iequals(*arg, L"as")) {
 				++arg;
 				if (arg < argVerb) {
-					std::wstring creds = *arg;
+					p.as = *arg;
 					++arg;
 
 					// parse creds into username and password
-					size_t split = creds.find(L':');
+					size_t split = p.as.find(L':');
 					if (split == std::wstring::npos) {
-						p.username = creds;
+						p.username = p.as;
 					}
 					else {
-						p.username = creds.substr(0, split);
-						p.password = creds.substr(split + 1);
+						p.username = p.as.substr(0, split);
+						p.password = p.as.substr(split + 1);
 					}
 				}
 				else {
@@ -1661,16 +1883,14 @@ params ParseParams(int argc, wchar_t* argv[])
 		// pipe can have either to or from followed by device name
 
 		if (arg < argEnd && iequals(*arg, L"to")) {
-			p.to = *arg;
+			p.subcommand = ToLower(*arg);
 		}
 		else if (arg < argEnd && iequals(*arg, L"from")) {
-			p.from = *arg;
+			p.subcommand = ToLower(*arg);
 		}
 		else {
 			return invalidArgs(L"pipe requires `to` or `from` and a device name");
 		}
-
-		p.subcommand = ToLower(*arg);
 
 		++arg;
 
@@ -1748,6 +1968,18 @@ params ParseParams(int argc, wchar_t* argv[])
 
 			// TODO with copy only, not copy only, etc?
 
+			if (arg < argEnd && iequals(*arg, L"with")) {
+				++arg;
+
+				if (arg >= argEnd) {
+					return invalidArgs(L"missing option after with");
+				}
+
+				// no with options for backup yet
+
+				return invalidArgs(L"invalid with option");
+			}
+
 			if (arg < argEnd) {
 				return invalidArgs(L"extra args at end");
 			}
@@ -1789,7 +2021,7 @@ params ParseParams(int argc, wchar_t* argv[])
 				}
 
 				if (iequals(*arg, L"replace")) {
-					p.subcommand = *arg;
+					p.subcommand = ToLower(*arg);
 					++arg;
 				}
 				else {
@@ -1805,6 +2037,100 @@ params ParseParams(int argc, wchar_t* argv[])
 	return p;
 }
 
+std::wstring MakeParams(const params& p)
+{
+	std::wstring commandLine;
+	commandLine.reserve(260);
+
+	auto append = [&commandLine](std::wstring str) {
+		if (str.empty()) {
+			return;
+		}
+
+		if (!commandLine.empty()) {
+			commandLine += L" ";
+		}
+
+		commandLine += escapeCommandLine(str);
+	};
+
+	if (!p.instance.empty()) {
+		append(p.instance);
+	}
+	if (!p.as.empty()) {
+		append(L"as");
+		append(p.as);
+	}
+
+	assert(!p.command.empty());
+
+	append(p.command);
+	if (p.isRestore() && p.subcommand == L"filelistonly") {
+		append(p.subcommand);
+
+		if (!p.from.empty()) {
+			append(L"from");
+			append(p.from);
+		}
+	} else if (p.isPipe()) {
+
+		assert(!p.subcommand.empty());
+
+		append(p.subcommand);
+		
+		assert(!p.device.empty());
+
+		append(p.device);
+
+		assert((p.to.empty() && p.from.empty()) || (p.to.empty() && !p.from.empty()) || (p.from.empty() && !p.to.empty()));
+
+		if (!p.to.empty()) {
+			append(L"to");
+			append(p.to);
+		}
+		if (!p.from.empty()) {
+			append(L"from");
+			append(p.from);
+		}
+	}
+	else if (p.isBackup()) {
+
+		assert(!p.database.empty());
+
+		append(p.database);
+
+		if (!p.to.empty()) {
+			append(L"to");
+			append(p.to);
+		}
+
+		assert(p.from.empty());
+	}
+	else if (p.isRestore()) {
+
+		assert(!p.database.empty());
+
+		append(p.database);
+
+		if (!p.from.empty()) {
+			append(L"from");
+			append(p.from);
+		}
+
+		if (!p.to.empty()) {
+			append(L"to");
+			append(p.to);
+		}
+
+		if (p.subcommand == L"replace") {
+			append(L"with");
+			append(p.subcommand);
+		}
+	}
+
+	return commandLine;
+}
+
 #ifdef _DEBUG
 bool TestParseParams()
 {
@@ -1816,15 +2142,26 @@ bool TestParseParams()
 			return false;
 		}
 
-		auto p = ParseParams(argc, argv);
+		auto p = ParseParams(argc, argv, true);
 
 		::LocalFree(argv);
 
-		std::wcerr << L"Parsed `" << cmdLine << L"`..." << std::endl;
-		std::wcerr << L"\t" << p << std::endl;
+		auto rebuilt = L"mssqlPipe " + MakeParams(p);
 
-		if (!SUCCEEDED(p.hr)) {
-			std::wcerr << L"FAILED!" << std::endl;
+		bool succeeded = SUCCEEDED(p.hr);
+		bool matches = iequals(cmdLine, rebuilt) || iequals(L"(`database`, ``)", makeCommandLineDiff(cmdLine, rebuilt));
+
+		if (!succeeded || !matches) {
+			if (!succeeded) {
+				std::wcerr << L"FAILED! " << p.errorMessage << L" (0x" << std::hex << p.hr << std::dec << L")" << std::endl;
+			}
+			if (!matches) {
+				std::wcerr << L"MISMATCH! " << makeCommandLineDiff(cmdLine, rebuilt) << std::endl;
+			}
+			std::wcerr << L">\t`" << cmdLine << L"`" << std::endl;
+			std::wcerr << L"<\t`" << rebuilt << L"`" << std::endl;
+			std::wcerr << L"=\t" << p << std::endl;
+			std::wcerr << std::endl;
 			return false;
 		}
 
@@ -1875,10 +2212,12 @@ int wmain(int argc, wchar_t* argv[])
 	}
 #endif
 #ifdef _DEBUG
-	//assert(TestParseParams());
+	assert(TestParseParams());
 #endif
+		
+	std::wcerr << L"\nmssqlPipe v1.0.1\n" << std::endl;
 
-	params p = ParseParams(argc, argv);
+	params p = ParseParams(argc, argv, false);
 	
 	if (SUCCEEDED(p.hr)) {
 		p.hr = Run(p);
