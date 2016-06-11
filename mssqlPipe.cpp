@@ -11,16 +11,17 @@ void showUsage()
 	std::wcerr << std::endl;
 	std::wcerr << L"Usage:" << std::endl;
 	std::wcerr << std::endl;
-	std::wcerr << L"mssqlPipe [instance] backup [database] dbname\n\t[to filename]" << std::endl;
-	std::wcerr << L"mssqlPipe [instance] restore [database] dbname\n\t[from filename] [to filepath] [with replace]" << std::endl;
-	std::wcerr << L"mssqlPipe [instance] restore filelistonly\n\t[from filename]" << std::endl;
-	std::wcerr << L"mssqlPipe [instance] pipe\n\tto devicename\n\tfrom devicename" << std::endl;
+	std::wcerr << L"mssqlPipe [instance] backup [database] dbname\n\t[to filename] [as username[:password]]" << std::endl;
+	std::wcerr << L"mssqlPipe [instance] restore [database] dbname\n\t[from filename] [to filepath] [with replace] [as username[:password]]" << std::endl;
+	std::wcerr << L"mssqlPipe [instance] restore filelistonly\n\t[from filename] [as username[:password]]" << std::endl;
+	std::wcerr << L"mssqlPipe [instance] pipe (to|from) devicename" << std::endl;
 	std::wcerr << std::endl;
 	std::wcerr << L"stdin or stdout will be used if no filenames specified." << std::endl;
+	std::wcerr << L"[as username[:password]] can be omitted.\n\tWindows authentication (SSPI) will be used instead." << std::endl;
 	std::wcerr << std::endl;
 	std::wcerr << L"Examples:" << std::endl;
 	std::wcerr << std::endl;
-	std::wcerr << L"mssqlPipe myinstance backup AdventureWorks to AdventureWorks.bak" << std::endl;
+	std::wcerr << L"mssqlPipe myinstance backup AdventureWorks to AdventureWorks.bak as sa:hunter2" << std::endl;
 	std::wcerr << L"mssqlPipe myinstance backup AdventureWorks > AdventureWorks.bak" << std::endl;
 	std::wcerr << L"mssqlPipe backup database AdventureWorks | 7za a AdventureWorks.xz -si" << std::endl;
 	std::wcerr << L"7za e AdventureWorks.xz -so | mssqlPipe restore AdventureWorks to c:\\db\\" << std::endl;
@@ -275,6 +276,9 @@ struct params
 	std::wstring device;
 	std::wstring from;
 	std::wstring to;
+
+	std::wstring username;
+	std::wstring password;
 
 	DWORD timeout = 10 * 1000;
 
@@ -600,7 +604,6 @@ struct VirtualDevice
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
 			std::wcerr << L"Failed to create device set: " << std::hex << hr << std::dec << std::endl;
-			std::wcerr << L"Note mssqlPipe must be run as administrator!" << std::endl;
 			return hr;
 		}
 		else {			
@@ -633,19 +636,92 @@ struct VirtualDevice
 	}
 };
 
-std::wstring MakeConnectionString(std::wstring instance)
+std::wstring EscapeConnectionStringValue(const std::wstring& val)
+{
+	auto pos = val.begin();
+
+	bool hasSpace = false;
+	int singleCount = 0;
+	int doubleCount = 0;
+	int otherCount = 0;
+
+	if (!val.empty()) {
+		if ((::iswspace(val.front())) || (::iswspace(val.back()))) {
+			hasSpace = true;
+		}
+	}
+	while (pos < val.end()) {
+		switch (*pos++) {
+		case L';':
+			++otherCount;
+			break;
+		case L'\'':
+			++singleCount;
+			break;
+		case L'\"':
+			++doubleCount;
+			break;
+		}
+	}
+
+	int totalCount = otherCount + singleCount + doubleCount;
+
+	if (!totalCount && !hasSpace) {
+		return val;
+	}
+
+	std::wstring esc;
+	esc.reserve(val.length() + 2 + (totalCount * 2));
+
+	wchar_t c = L'\'';
+	if (singleCount && !doubleCount) {
+		c = L'\"';
+	}
+	esc.push_back(c);
+
+	pos = val.begin();
+	while (pos < val.end()) {
+		esc.push_back(*pos);
+		if (*pos == c) {
+			esc.push_back(c);
+		}
+		++pos;
+	}
+
+	esc.push_back(c);
+
+	return esc;
+}
+
+std::wstring MakeConnectionString(const std::wstring& instance, const std::wstring& username, const std::wstring& password)
 {
 	std::wstring connectionString;
 
-	connectionString.reserve(128);
+	connectionString.reserve(256);
 		
 	// SQLNCLI might be a better option, but SQLOLEDB is ubiquitous. 
-	connectionString = L"Provider=SQLOLEDB;Initial Catalog=master;Integrated Security=SSPI;Data Source=lpc:.";
-
-	if (!instance.empty()) {
-		connectionString += L"\\";
-		connectionString += instance;
+	connectionString = L"Provider=SQLOLEDB;Initial Catalog=master;";
+	
+	if (username.empty()) {
+		"Integrated Security = SSPI;";
 	}
+	else {
+		connectionString += L"User ID=";
+		connectionString += EscapeConnectionStringValue(username);
+		connectionString += L";Password=";
+		connectionString += EscapeConnectionStringValue(password);
+		connectionString += L";";
+	}
+
+	connectionString += L"Data Source=";
+
+	std::wstring dataSource = L"lpc:.";
+	if (!instance.empty()) {
+		dataSource += L"\\";
+		dataSource += instance;
+	}
+
+	connectionString += EscapeConnectionStringValue(dataSource);
 	connectionString += L";";
 
 	return connectionString;
@@ -793,7 +869,7 @@ HRESULT RunPrepareRestoreDatabase(params p, InputFile& inputFile, std::wstring& 
 {
 	HRESULT hr = 0;
 
-	std::wstring connectionString = MakeConnectionString(p.instance);
+	std::wstring connectionString = MakeConnectionString(p.instance, p.username, p.password);
 
 	std::wstring sql;
 	{
@@ -804,6 +880,9 @@ HRESULT RunPrepareRestoreDatabase(params p, InputFile& inputFile, std::wstring& 
 
 	VirtualDevice vd(p.instance, p.device);
 	hr = vd.Create();
+	if (!SUCCEEDED(hr)) {
+		return hr;
+	}
 
 	auto pipeResult = std::async([&vd, &inputFile, &p, quiet]{
 		CoInit comInit;
@@ -942,13 +1021,17 @@ HRESULT RunRestoreDatabase(params p, std::wstring sql, InputFile& inputFile, boo
 {
 	HRESULT hr = 0;
 
-	std::wstring connectionString = MakeConnectionString(p.instance);
+	std::wstring connectionString = MakeConnectionString(p.instance, p.username, p.password);
 
-	VirtualDevice vd(p.instance, p.device);
-	hr = vd.Create();
 	if (!quiet) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
 		std::wcerr << L"Restoring via virtual device " << p.device << std::endl;
+	}
+
+	VirtualDevice vd(p.instance, p.device);
+	hr = vd.Create();
+	if (!SUCCEEDED(hr)) {
+		return hr;
 	}
 
 	auto pipeResult = std::async([&vd, &inputFile, &p, quiet]{
@@ -1137,7 +1220,7 @@ HRESULT RunBackup(params p, FILE* file)
 {
 	HRESULT hr = 0;
 
-	std::wstring connectionString = MakeConnectionString(p.instance);
+	std::wstring connectionString = MakeConnectionString(p.instance, p.username, p.password);
 
 	std::wstring sql;
 	{
@@ -1147,11 +1230,15 @@ HRESULT RunBackup(params p, FILE* file)
 		sql = o.str();
 	}
 
-	VirtualDevice vd(p.instance, p.device);
-	hr = vd.Create();
 	{
 		std::unique_lock<std::mutex> lock(outputMutex_);
 		std::wcerr << L"Backing up via virtual device " << p.device << std::endl;
+	}
+
+	VirtualDevice vd(p.instance, p.device);
+	hr = vd.Create();
+	if (!SUCCEEDED(hr)) {
+		return hr;
 	}
 
 	OutputFile outputFile(file);
@@ -1223,11 +1310,15 @@ HRESULT RunPipe(params p, FILE* file)
 {
 	HRESULT hr = 0;
 
-	VirtualDevice vd(p.instance, p.device);
-	hr = vd.Create();
 	{
 		std::unique_lock<std::mutex> lock(outputMutex_);
 		std::wcerr << L"Piping " << p.subcommand << L" virtual device " << p.device << std::endl;
+	}
+
+	VirtualDevice vd(p.instance, p.device);
+	hr = vd.Create();
+	if (!SUCCEEDED(hr)) {
+		return hr;
 	}
 
 	// in pipe mode, use a much larger than the default timeout, say 5 minutes
@@ -1308,13 +1399,13 @@ HRESULT Run(params p)
 	HRESULT hr = S_OK;
 	
 	if (p.isBackup()) {
-		RunBackup(p, file);
+		hr = RunBackup(p, file);
 	}
 	else if (p.isRestore()) {
-		RunRestore(p, file);
+		hr = RunRestore(p, file);
 	}
 	else if (p.isPipe()) {
-		RunPipe(p, file);
+		hr = RunPipe(p, file);
 	}
 	else {		
 		std::wcerr << L"unexpected command " << p.command << std::endl;
@@ -1328,7 +1419,7 @@ HRESULT Run(params p)
 	return hr;
 }
 
-int wmain(int argc, wchar_t* argv[])
+int ParseCommandAndRun(int argc, wchar_t* argv[])
 {
 	CoInit comInit;
 	
@@ -1469,9 +1560,7 @@ int wmain(int argc, wchar_t* argv[])
 			if (arg < argEnd) {
 				if (iequals(*arg, L"replace")) {
 					p.subcommand = *arg;
-				}
-				else {
-					return invalidArgs(L"unexpected argument after restore", *arg);
+					++arg;
 				}
 			}
 		}
@@ -1502,8 +1591,51 @@ int wmain(int argc, wchar_t* argv[])
 		}
 	}
 
+	if (arg < argEnd) {
+		// ... [as username[:password]]
+		if (iequals(*arg, L"as")) {
+			++arg;
+
+			if (arg < argEnd) {
+				std::wstring creds = *arg;
+				++arg;
+
+				// parse creds into username and password
+				size_t split = creds.find(L':');
+				if (split == std::wstring::npos) {
+					p.username = creds;
+				}
+				else {
+					p.username = creds.substr(0, split);
+					p.password = creds.substr(split + 1);
+				}
+			}
+			else {
+				return invalidArgs(L"as requires username[:password]");
+			}
+		}
+		else {
+			return invalidArgs(L" unexpected argument at end of command");
+		}
+	}
+
 	HRESULT hr = Run(p);
+
+	if (E_ACCESSDENIED == hr) {
+		std::wcerr << L"Run failed with E_ACCESSDENIED; mssqlPipe may need to run as an administrator." << std::endl;
+	}
 		
+	return hr;
+}
+
+int wmain(int argc, wchar_t* argv[])
+{
+	HRESULT hr = ParseCommandAndRun(argc, argv);
+
+#ifdef _DEBUG
+	::Sleep(5000);
+#endif
+
 	return hr;
 }
 
