@@ -759,7 +759,7 @@ std::wstring MakeConnectionString(const std::wstring& instance, const std::wstri
 	connectionString = L"Provider=SQLOLEDB;Initial Catalog=master;";
 	
 	if (username.empty()) {
-		"Integrated Security = SSPI;";
+		connectionString += L"Integrated Security=SSPI;";
 	}
 	else {
 		connectionString += L"User ID=";
@@ -799,7 +799,7 @@ ADODB::_ConnectionPtr Connect(std::wstring connectionString)
 	catch (_com_error& e) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
 		std::wcerr << L"Could not connect to " << connectionString << std::endl;
-		std::wcerr << e.Error() << L": " << e.ErrorMessage() << std::endl;
+		std::wcerr << std::hex << e.Error() << std::dec << L": " << e.ErrorMessage() << std::endl;
 		std::wcerr << e.Description() << std::endl;
 
 		return nullptr;
@@ -985,7 +985,7 @@ HRESULT RunPrepareRestoreDatabase(params p, InputFile& inputFile, std::wstring& 
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << e.Error() << L": " << e.ErrorMessage() << std::endl;
+			std::wcerr << std::hex << e.Error() << std::dec << L": " << e.ErrorMessage() << std::endl;
 			std::wcerr << e.Description() << std::endl;
 			return e.Error();
 		}
@@ -1046,7 +1046,7 @@ select
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << e.Error() << L": " << e.ErrorMessage() << std::endl;
+			std::wcerr << std::hex << e.Error() << std::dec << L": " << e.ErrorMessage() << std::endl;
 			std::wcerr << e.Description() << std::endl;
 			return e.Error();
 		}
@@ -1135,7 +1135,7 @@ HRESULT RunRestoreDatabase(params p, std::wstring sql, InputFile& inputFile, boo
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << e.Error() << L": " << e.ErrorMessage() << std::endl;
+			std::wcerr << std::hex << e.Error() << std::dec << L": " << e.ErrorMessage() << std::endl;
 			std::wcerr << e.Description() << std::endl;
 			return e.Error();
 		}
@@ -1344,7 +1344,7 @@ HRESULT RunBackup(params p, HANDLE hFile)
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << e.Error() << L": " << e.ErrorMessage() << std::endl;
+			std::wcerr << std::hex << e.Error() << std::dec << L": " << e.ErrorMessage() << std::endl;
 			std::wcerr << e.Description() << std::endl;
 			return e.Error();
 		}
@@ -1875,7 +1875,7 @@ int wmain(int argc, wchar_t* argv[])
 	}
 #endif
 #ifdef _DEBUG
-	assert(TestParseParams());
+	//assert(TestParseParams());
 #endif
 
 	params p = ParseParams(argc, argv);
