@@ -45,5 +45,7 @@
 
 #include "msado60_backcompat.tlh"
 
+#include <assert.h>
+
 
 

@@ -36,7 +36,7 @@ bool iequals(A&& a, B&& b)
 struct iless_predicate
 {
 	template<typename A, typename B>
-	bool operator()(A&& a, B&& b)
+	bool operator()(A&& a, B&& b) const
 	{
 		return icmp(std::forward<A>(a), std::forward<B>(b)) < 0;
 	}

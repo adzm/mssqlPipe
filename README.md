@@ -1,6 +1,14 @@
 # mssqlPipe v1.2.0
 
-SQL Server command line backup and restore through pipes using stdin and stdout
+SQL Server command line backup and restore through pipes using stdin and stdout!
+
+## Features
+
+- Familiar T-SQL-like syntax.
+- If piping to a non-elevated process, a new elevated process is spawned automatically, redirecting input and output of the original process!
+- Automatically renames and moves database files to a specified path.
+- Low-level pipe command for complex or customized usage.
+- Easily scriptable and automatable backup and restore; errorlevel is set appropriately on process exit.
 
 ## Syntax
 
