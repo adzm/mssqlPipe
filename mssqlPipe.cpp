@@ -2151,16 +2151,38 @@ bool TestParseParams()
 		bool succeeded = SUCCEEDED(p.hr);
 		bool matches = iequals(cmdLine, rebuilt) || iequals(L"(`database`, ``)", makeCommandLineDiff(cmdLine, rebuilt));
 
-		if (!succeeded || !matches) {
+		argc = 0;
+		argv = ::CommandLineToArgvW(rebuilt.c_str(), &argc);
+
+		if (!argv) {
+			return false;
+		}
+
+		auto p_rebuilt = ParseParams(argc, argv, true);
+
+		::LocalFree(argv);
+
+		auto p_rebuilt_rebuilt = L"mssqlPipe " + MakeParams(p_rebuilt);
+
+		bool rebuilt_matches = iequals(rebuilt, p_rebuilt_rebuilt);
+
+		if (!succeeded || !matches || !rebuilt_matches) {
 			if (!succeeded) {
 				std::wcerr << L"FAILED! " << p.errorMessage << L" (0x" << std::hex << p.hr << std::dec << L")" << std::endl;
 			}
 			if (!matches) {
 				std::wcerr << L"MISMATCH! " << makeCommandLineDiff(cmdLine, rebuilt) << std::endl;
 			}
+			if (!rebuilt_matches) {
+				std::wcerr << L"REBUILT MISMATCH! " << makeCommandLineDiff(rebuilt, p_rebuilt_rebuilt) << std::endl;
+			}
 			std::wcerr << L">\t`" << cmdLine << L"`" << std::endl;
 			std::wcerr << L"<\t`" << rebuilt << L"`" << std::endl;
 			std::wcerr << L"=\t" << p << std::endl;
+			if (!rebuilt_matches) {
+				std::wcerr << L"*<\t`" << p_rebuilt_rebuilt << L"`" << std::endl;
+				std::wcerr << L"*=\t" << p_rebuilt << std::endl;
+			}
 			std::wcerr << std::endl;
 			return false;
 		}
@@ -2219,7 +2241,7 @@ int wmain(int argc, wchar_t* argv[])
 
 	params p = ParseParams(argc, argv, false);
 	
-	if (SUCCEEDED(p.hr)) {
+	if (SUCCEEDED(p.hr) && !p.command.empty()) {
 		p.hr = Run(p);
 	}
 
