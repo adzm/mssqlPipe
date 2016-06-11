@@ -8,28 +8,32 @@
 
 void showUsage()
 {
-	std::wcerr << std::endl;
-	std::wcerr << L"Usage:" << std::endl;
-	std::wcerr << std::endl;
-	std::wcerr << L"mssqlPipe [instance] backup [database] dbname\n\t[to filename] [as username[:password]]" << std::endl;
-	std::wcerr << L"mssqlPipe [instance] restore [database] dbname\n\t[from filename] [to filepath] [with replace] [as username[:password]]" << std::endl;
-	std::wcerr << L"mssqlPipe [instance] restore filelistonly\n\t[from filename] [as username[:password]]" << std::endl;
-	std::wcerr << L"mssqlPipe [instance] pipe (to|from) devicename" << std::endl;
-	std::wcerr << std::endl;
-	std::wcerr << L"stdin or stdout will be used if no filenames specified." << std::endl;
-	std::wcerr << L"[as username[:password]] can be omitted.\n\tWindows authentication (SSPI) will be used instead." << std::endl;
-	std::wcerr << std::endl;
-	std::wcerr << L"Examples:" << std::endl;
-	std::wcerr << std::endl;
-	std::wcerr << L"mssqlPipe myinstance backup AdventureWorks to AdventureWorks.bak as sa:hunter2" << std::endl;
-	std::wcerr << L"mssqlPipe myinstance backup AdventureWorks > AdventureWorks.bak" << std::endl;
-	std::wcerr << L"mssqlPipe backup database AdventureWorks | 7za a AdventureWorks.xz -si" << std::endl;
-	std::wcerr << L"7za e AdventureWorks.xz -so | mssqlPipe restore AdventureWorks to c:\\db\\" << std::endl;
-	std::wcerr << L"mssqlPipe restore AdventureWorks from AdventureWorks.bak with replace" << std::endl;
-	std::wcerr << L"mssqlPipe pipe from VirtualDevice42 > output.bak" << std::endl;
-	std::wcerr << L"mssqlPipe pipe to VirtualDevice42 < input.bak" << std::endl;
-	std::wcerr << std::endl;
-	std::wcerr << L"Happy piping!" << std::endl;
+	std::wcerr << LR"(
+Usage:
+
+mssqlPipe [instance] [as username[:password]] (backup|restore|pipe) ... 
+
+... backup [database] dbname [to filename]
+... restore [database] dbname [from filename] [to filepath] [with replace]
+... restore filelistonly [from filename]
+... pipe (to|from) devicename [(to|from) filename]
+
+stdin or stdout will be used if no filenames specified. Windows authentication
+(SSPI) will be used if [as username[:password]] is not specified.
+
+Examples:
+
+mssqlPipe myinstance backup AdventureWorks to AdventureWorks.bak
+mssqlPipe myinstance as sa:hunter2 backup AdventureWorks > AdventureWorks.bak
+mssqlPipe backup database AdventureWorks | 7za a AdventureWorks.xz -txz -si
+7za e AdventureWorks.xz -so | mssqlPipe restore AdventureWorks to c:/db/
+mssqlPipe restore AdventureWorks from AdventureWorks.bak with replace
+mssqlPipe pipe from VirtualDevice42 > output.bak
+mssqlPipe pipe to VirtualDevice42 < input.bak
+
+Happy piping!
+)";
+
 	std::wcerr << std::endl;
 }
 
@@ -136,23 +140,6 @@ void ComEnsure(HRESULT hr)
 		ComIssueError(hr);
 	}
 }
-
-///
-
-HRESULT invalidArgs(const wchar_t* msg, const wchar_t* arg = nullptr, HRESULT hr = E_INVALIDARG)
-{
-	std::wcerr << msg;
-
-	if (arg && *arg) {
-		std::wcerr << L" `" << arg << L"`";
-	} 
-
-	std::wcerr << std::endl;
-
-	showUsage();
-
-	return hr;
-};
 
 ///
 
@@ -279,6 +266,45 @@ struct params
 
 	std::wstring username;
 	std::wstring password;
+
+	HRESULT hr = S_OK;
+
+	friend std::wostream& operator<<(std::wostream& o, const params& p)
+	{
+		o << L"(";
+		if (S_OK != p.hr) {
+			o << L"hr=" << p.hr << L";";
+		}
+		if (!p.instance.empty()) {
+			o << L"instance=" << p.instance << L";";
+		}
+		if (!p.command.empty()) {
+			o << L"command=" << p.command << L";";
+		}
+		if (!p.subcommand.empty()) {
+			o << L"subcommand=" << p.subcommand << L";";
+		}
+		if (!p.database.empty()) {
+			o << L"database=" << p.database << L";";
+		}
+		if (!p.from.empty()) {
+			o << L"from=" << p.from << L";";
+		}
+		if (!p.to.empty()) {
+			o << L"to=" << p.to << L";";
+		}
+		if (!p.username.empty()) {
+			o << L"username=" << p.username << L";";
+		}
+		if (!p.password.empty()) {
+			o << L"password=" << p.password << L";";
+		}
+		
+		o << L"device=" << p.device;
+
+		o << L")";
+		return o;
+	}
 
 	DWORD timeout = 10 * 1000;
 
@@ -1369,6 +1395,12 @@ HRESULT Run(params p)
 		}
 	}
 	else if (p.isRestore()) {
+		if (!p.to.empty() && INVALID_FILE_ATTRIBUTES == ::GetFileAttributes(p.to.c_str())) {
+			int ret = ::SHCreateDirectoryEx(nullptr, p.to.c_str(), nullptr);
+			if (ret && ret != ERROR_FILE_EXISTS && ret != ERROR_ALREADY_EXISTS) {
+				std::wcerr << ret << L": Failed to create restore to path. Continuing (SQL Server may have access)... " << p.from << std::endl;
+			}
+		}
 		if (p.from.empty()) {
 			file = stdin;
 		}
@@ -1382,10 +1414,28 @@ HRESULT Run(params p)
 	}
 	else if (p.isPipe()) {
 		if (iequals(p.subcommand, L"to")) {
-			file = stdin;
+			if (p.from.empty()) {
+				file = stdin;
+			}
+			else {
+				int ret = _wfopen_s(&file, p.from.c_str(), L"rb");
+				if (!file) {
+					std::wcerr << ret << L": Failed to open " << p.from << std::endl;
+					return E_FAIL;
+				}
+			}
 		}
 		else if (iequals(p.subcommand, L"from")) {
-			file = stdout;
+			if (p.to.empty()) {
+				file = stdout;
+			}
+			else {
+				int ret = _wfopen_s(&file, p.to.c_str(), L"wb");
+				if (!file) {
+					std::wcerr << ret << L": Failed to open " << p.to << std::endl;
+					return E_FAIL;
+				}
+			}
 		}
 	}
 
@@ -1419,15 +1469,358 @@ HRESULT Run(params p)
 	return hr;
 }
 
-int ParseCommandAndRun(int argc, wchar_t* argv[])
+params ParseParams(int argc, wchar_t* argv[])
 {
-	CoInit comInit;
+	params p;
 	
 	std::wcerr << L"\nmssqlPipe v1.0.1\n" << std::endl;
+
+	auto invalidArgs = [&](const wchar_t* msg, const wchar_t* arg = nullptr, HRESULT hr = E_INVALIDARG)
+	{
+		std::wcerr << msg;
+
+		if (arg && *arg) {
+			std::wcerr << L" `" << arg << L"`";
+		}
+
+		std::wcerr << std::endl;
+
+		showUsage();
+
+		p.hr = hr;
+
+		return p;
+	};
+
 	if (argc < 2) {
 		showUsage();
-		return E_INVALIDARG;
+		p.hr = E_INVALIDARG;
+		return p;
 	}
+
+		
+	p.device = make_guid();
+
+	wchar_t** arg = argv;
+	wchar_t** argEnd = arg + argc;
+	wchar_t** argFirst = arg + 1;
+	wchar_t** argVerb = nullptr;
+	wchar_t** argVerbEnd = nullptr;
+
+	++arg;
+
+	// mssqlpipe [instance] [as username[:password]] (backup|restore [filelistonly]) [database] dbname [ [from|to] filename|path ] ...
+	
+	// first off we will find the verb!
+	{
+		while (arg < argEnd) {
+			auto sz = *arg;
+			if (iequals(sz, L"backup")) {
+				argVerb = arg++;
+				p.command = ToLower(sz);
+				if (arg < argEnd && iequals(*arg, L"database")) {
+					++arg;
+				}
+				break;
+			}
+			else if (iequals(sz, L"restore")) {
+				argVerb = arg++;
+				p.command = ToLower(sz);
+				if (arg < argEnd && iequals(*arg, L"database")) {
+					++arg;
+				}
+				if (arg < argEnd && iequals(*arg, L"filelistonly")) {
+					p.subcommand = ToLower(*arg);
+					++arg;
+				}
+				break;
+			}
+			else if (iequals(sz, L"pipe")) {
+				argVerb = arg++;
+				p.command = ToLower(sz);
+				break;
+			}
+
+			++arg;
+		}
+
+		argVerbEnd = arg;
+	}
+
+	// if argVerb is null, we are doomed
+
+	if (!argVerb) {
+		return invalidArgs(L"missing verb");
+	}
+
+	// so now we have two ranges: 
+	// [argFirst...argVerb) and [argVerbEnd...argEnd)
+
+	// start by parsing the first range, which has instance and authentication
+	{
+		arg = argFirst;
+
+		// first is instance
+		if (arg < argVerb && !iequals(*arg, L"as")) {
+			p.instance = *arg;
+			++arg;
+		}
+		if (arg < argVerb) {
+			if (iequals(*arg, L"as")) {
+				++arg;
+				if (arg < argVerb) {
+					std::wstring creds = *arg;
+					++arg;
+
+					// parse creds into username and password
+					size_t split = creds.find(L':');
+					if (split == std::wstring::npos) {
+						p.username = creds;
+					}
+					else {
+						p.username = creds.substr(0, split);
+						p.password = creds.substr(split + 1);
+					}
+				}
+				else {
+					return invalidArgs(L"invalid authentication");
+				}
+			}
+		}
+
+		if (arg < argVerb) {
+			return invalidArgs(L"invalid instance or authentication");
+		}
+
+		while (arg < argVerb) {
+			auto sz = *arg;
+			if (iequals(sz, L"as")) {
+			}
+			else {
+				p.instance = sz;
+				++arg;
+			}
+		}
+	}
+
+	// now we can parse specific options for the verbs
+
+	arg = argVerbEnd;
+
+
+	if (p.isPipe()) {
+		if (arg >= argEnd) {
+			return invalidArgs(L"arguments missing");
+		}
+
+		// pipe can have either to or from followed by device name
+
+		if (arg < argEnd && iequals(*arg, L"to")) {
+			p.to = *arg;
+		}
+		else if (arg < argEnd && iequals(*arg, L"from")) {
+			p.from = *arg;
+		}
+		else {
+			return invalidArgs(L"pipe requires `to` or `from` and a device name");
+		}
+
+		p.subcommand = ToLower(*arg);
+
+		++arg;
+
+		if (arg >= argEnd) {
+			return invalidArgs(L"pipe requires a device name");
+		}
+
+		p.device = *arg;
+
+		++arg;
+
+		if (arg < argEnd && p.subcommand == L"from" && iequals(*arg, L"to")) {
+			++arg;
+
+			if (arg >= argEnd) {
+				return invalidArgs(L"missing file name");
+			}
+
+			p.to = *arg;
+			++arg;
+		} else if (arg < argEnd && p.subcommand == L"to" && iequals(*arg, L"from")) {
+			++arg;
+
+			if (arg >= argEnd) {
+				return invalidArgs(L"missing file name");
+			}
+
+			p.from = *arg;
+			++arg;
+		}
+
+		if (arg < argEnd) {
+			return invalidArgs(L"extra args at end");
+		}
+	}
+	else if (p.isRestore() && p.subcommand == L"filelistonly") {
+		// filelistonly 
+
+		if (arg < argEnd && iequals(*arg, L"from")) {
+			++arg;
+
+			if (arg >= argEnd) {
+				return invalidArgs(L"missing file name");
+			}
+
+			p.from = *arg;
+			++arg;
+		}
+
+		if (arg < argEnd) {
+			return invalidArgs(L"extra args at end");
+		}
+	}
+	else if (p.isBackupOrRestore()) {
+
+		// parse database name
+		if (arg < argEnd) {
+			p.database = *arg;
+			++arg;
+		}
+
+		if (p.isBackup()) {
+
+			// to file
+			if (arg < argEnd && iequals(*arg, L"to")) {
+				++arg;
+
+				if (arg >= argEnd) {
+					return invalidArgs(L"missing file name");
+				}
+
+				p.to = *arg;
+				++arg;
+			}
+
+			// TODO with copy only, not copy only, etc?
+
+			if (arg < argEnd) {
+				return invalidArgs(L"extra args at end");
+			}
+
+		}
+		else if (p.isRestore()) {
+
+			// from file
+			if (arg < argEnd && iequals(*arg, L"from")) {
+				++arg;
+
+				if (arg >= argEnd) {
+					return invalidArgs(L"missing file name");
+				}
+
+				p.from = *arg;
+				++arg;
+			}
+
+			// to path
+			if (arg < argEnd && iequals(*arg, L"to")) {
+				++arg;
+
+				if (arg >= argEnd) {
+					return invalidArgs(L"missing restore path");
+				}
+
+				p.to = *arg;
+				++arg;
+			}
+
+			// with replace
+
+			if (arg < argEnd && iequals(*arg, L"with")) {
+				++arg;
+
+				if (arg >= argEnd) {
+					return invalidArgs(L"missing option after with");
+				}
+
+				if (iequals(*arg, L"replace")) {
+					p.subcommand = *arg;
+					++arg;
+				}
+				else {
+					return invalidArgs(L"invalid with option");
+				}
+			}
+		}
+		else {
+			return invalidArgs(L"something horrible");
+		}
+	}
+		
+	return p;
+}
+
+#ifdef _DEBUG
+bool TestParseParams()
+{
+	auto test = [](const wchar_t* cmdLine) {
+		int argc = 0;
+		wchar_t** argv = ::CommandLineToArgvW(cmdLine, &argc);
+
+		if (!argv) {
+			return false;
+		}
+
+		auto p = ParseParams(argc, argv);
+
+		::LocalFree(argv);
+
+		std::wcerr << L"Parsed `" << cmdLine << L"`..." << std::endl;
+		std::wcerr << L"\t" << p << std::endl;
+
+		if (!SUCCEEDED(p.hr)) {
+			std::wcerr << L"FAILED!" << std::endl;
+			return false;
+		}
+
+		return true;
+	};
+
+	// arguments before verb
+	if (!test(L"mssqlPipe backup AdventureWorks")) { return false; }
+	if (!test(L"mssqlPipe myinstance backup AdventureWorks")) { return false; }
+	if (!test(L"mssqlPipe myinstance as sa:hunter2 backup AdventureWorks")) { return false; }
+
+	// backup
+	if (!test(L"mssqlPipe backup AdventureWorks")) { return false; }
+	if (!test(L"mssqlPipe backup database AdventureWorks")) { return false; }
+	if (!test(L"mssqlPipe backup AdventureWorks to z:/db")) { return false; }
+
+	// restore
+	if (!test(L"mssqlPipe restore AdventureWorks")) { return false; }
+	if (!test(L"mssqlPipe restore database AdventureWorks")) { return false; }
+	if (!test(L"mssqlPipe restore AdventureWorks from z:/db/AdventureWorks.bak")) { return false; }
+	if (!test(L"mssqlPipe restore AdventureWorks with replace")) { return false; }
+	if (!test(L"mssqlPipe restore AdventureWorks from z:/db/AdventureWorks.bak with replace")) { return false; }
+
+	// restore filelistonly
+	if (!test(L"mssqlPipe restore filelistonly")) { return false; }
+	if (!test(L"mssqlPipe restore filelistonly from z:/db/AdventureWorks.bak")) { return false; }
+
+	// pipe
+	if (!test(L"mssqlPipe pipe to VirtualDevice")) { return false; }
+	if (!test(L"mssqlPipe pipe from VirtualDevice")) { return false; }
+	if (!test(L"mssqlPipe pipe to VirtualDevice from AdventureWorks.bak")) { return false; }
+	if (!test(L"mssqlPipe pipe from VirtualDevice to AdventureWorks.bak")) { return false; }
+	
+	return true;
+}
+#endif
+
+int wmain(int argc, wchar_t* argv[])
+{
+
+	CoInit comInit;
 
 #ifdef _DEBUG
 	bool waitForDebugger = true;
@@ -1437,205 +1830,24 @@ int ParseCommandAndRun(int argc, wchar_t* argv[])
 		::Sleep(10000);
 	}
 #endif
+#ifdef _DEBUG
+	assert(TestParseParams());
+#endif
 
-	params p;
-		
-	p.device = make_guid();
-
-	wchar_t** arg = argv;
-	wchar_t** argEnd = arg + argc;
-
-	++arg;
-
-	// mssqlpipe [instance] (backup|restore [filelistonly]) [database] dbname [ [from|to] filename|path ]
-
-	auto parseCommand = [&](const wchar_t* sz){
-		if (iequals(sz, L"backup")) {			
-			p.command = ToLower(sz);
-			return true;
-		}
-		else if (iequals(sz, L"restore")) {
-			p.command = ToLower(sz);
-			return true;
-		}
-		else if (iequals(sz, L"pipe")) {
-			p.command = ToLower(sz);
-			return true;
-		}
-		else {
-			return false;
-		}
-	};
-
-	if (arg >= argEnd) {
-		return invalidArgs(L"missing command");
-	}
-
-	if (parseCommand(*arg)) {
-		++arg;
-	} else {
-		p.instance = *arg;
-
-		++arg;
-
-		if (arg >= argEnd) {
-			return invalidArgs(L"missing command");
-		}
-
-		if (!parseCommand(*arg)) {
-			return invalidArgs(L"invalid command", *arg);
-		}
-
-		++arg;
-	}
-
-	if (arg < argEnd && iequals(*arg, L"filelistonly")) {
-		if (!p.isRestore()) {
-			return invalidArgs(L"filelistonly only valid for restore");
-		}
-		p.subcommand = *arg;
-		++arg;
-	}
-	else if (p.isBackupOrRestore()) {
-		if (arg < argEnd && iequals(*arg, L"database")) {
-			++arg;
-		}
-
-		if (arg >= argEnd) {
-			return invalidArgs(L"missing database name");
-		}
-
-		p.database = *arg;
-		++arg;
-	}
+	params p = ParseParams(argc, argv);
 	
-	// [from|to]
-
-	if (arg < argEnd) {
-
-		// backup can only do 'to'
-		if (p.isBackup()) {
-			if (iequals(*arg, L"to")) {
-				++arg;
-			
-				if (arg >= argEnd) {
-					return invalidArgs(L"backup to missing local path");
-				}
-
-				p.to = *arg;
-				++arg;
-			}
-		}
-		else if (p.isRestore()) {
-			// restore can have [from] then [to]
-			if (arg < argEnd && iequals(*arg, L"from")) {
-				++arg;
-			
-				if (arg >= argEnd) {
-					return invalidArgs(L"restore from: missing local path or file name");
-				}
-
-				p.from = *arg;
-				++arg;
-			}
-
-			if (arg < argEnd && iequals(*arg, L"to")) {
-				++arg;
-			
-				if (arg >= argEnd) {
-					return invalidArgs(L"restore to: missing local path");
-				}
-
-				p.to = *arg;
-				++arg;
-				
-				::SHCreateDirectoryEx(nullptr, p.to.c_str(), nullptr);
-			}
-
-			// then [with] [replace]
-			if (arg < argEnd && iequals(*arg, L"with")) {
-				++arg;
-			}
-
-			if (arg < argEnd) {
-				if (iequals(*arg, L"replace")) {
-					p.subcommand = *arg;
-					++arg;
-				}
-			}
-		}
-		else if (p.isPipe()) {
-			// pipe can have either to or from followed by device name
-			
-			if (iequals(*arg, L"to")) {
-				p.to = *arg;
-			}
-			else if (iequals(*arg, L"from")) {
-				p.from = *arg;
-			}
-			else {
-				return invalidArgs(L"pipe requires `to` or `from` and a device name");
-			}
-
-			p.subcommand = ToLower(*arg);
-
-			++arg;
-			
-			if (arg >= argEnd) {
-				return invalidArgs(L"pipe requires a device name");
-			}
-
-			p.device = *arg;
-
-			++arg;
-		}
+	if (SUCCEEDED(p.hr)) {
+		p.hr = Run(p);
 	}
 
-	if (arg < argEnd) {
-		// ... [as username[:password]]
-		if (iequals(*arg, L"as")) {
-			++arg;
-
-			if (arg < argEnd) {
-				std::wstring creds = *arg;
-				++arg;
-
-				// parse creds into username and password
-				size_t split = creds.find(L':');
-				if (split == std::wstring::npos) {
-					p.username = creds;
-				}
-				else {
-					p.username = creds.substr(0, split);
-					p.password = creds.substr(split + 1);
-				}
-			}
-			else {
-				return invalidArgs(L"as requires username[:password]");
-			}
-		}
-		else {
-			return invalidArgs(L" unexpected argument at end of command");
-		}
-	}
-
-	HRESULT hr = Run(p);
-
-	if (E_ACCESSDENIED == hr) {
+	if (E_ACCESSDENIED == p.hr) {
 		std::wcerr << L"Run failed with E_ACCESSDENIED; mssqlPipe may need to run as an administrator." << std::endl;
 	}
-		
-	return hr;
-}
-
-int wmain(int argc, wchar_t* argv[])
-{
-	HRESULT hr = ParseCommandAndRun(argc, argv);
 
 #ifdef _DEBUG
 	::Sleep(5000);
 #endif
 
-	return hr;
+	return p.hr;
 }
 
