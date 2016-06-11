@@ -1157,6 +1157,8 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe,
 		std::wcerr << L"Warning: failed to connect to stderr pipe: " << lastError << std::endl;
 	}
 
+	std::wcerr << L"Piping with elevated process id " << ::GetProcessId(hProcess) << L"!" << std::endl;
+
 	if (!hOutput) {
 		hOutput = hPipe;
 	}
@@ -1185,7 +1187,7 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe,
 			}
 			totalBytes += dwBytesWritten;
 
-			{
+			if (hStderrPipe) {
 				DWORD dwBytesRead = 0;
 				DWORD dwBytesAvail = 0;
 				DWORD dwBytesInMessage = 0;
@@ -1225,6 +1227,7 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe,
 	}
 
 	::CloseHandle(hPipe);
+	::CloseHandle(hStderrPipe);
 
 	::WaitForSingleObject(hProcess, 5000);
 
