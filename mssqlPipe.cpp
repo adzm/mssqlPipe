@@ -6,6 +6,10 @@
 
 /****/
 
+constexpr auto mssqlPipe_Version = L"1.2.0";
+
+/****/
+
 std::mutex outputMutex_;
 
 /****/
@@ -1285,7 +1289,7 @@ int wmain(int argc, wchar_t* argv[])
 	assert(TestParseParams());
 #endif
 		
-	std::wcerr << L"\nmssqlPipe v1.0.1\n" << std::endl;
+	std::wcerr << L"\nmssqlPipe " << mssqlPipe_Version << L"\n" << std::endl;
 
 	params p = ParseParams(argc, argv, false);
 	
