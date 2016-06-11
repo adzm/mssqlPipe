@@ -163,7 +163,7 @@ std::wstring makeCommandLineDiff(std::wstring cmdLineA, std::wstring cmdLineB)
 	return result;
 }
 
-params ParseParams(int argc, wchar_t* argv[], bool quiet)
+params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 {
 	params p;
 
@@ -215,6 +215,7 @@ params ParseParams(int argc, wchar_t* argv[], bool quiet)
 	wchar_t** arg = argv;
 	wchar_t** argEnd = arg + argc;
 	wchar_t** argFirst = arg + 1;
+
 	wchar_t** argVerb = nullptr;
 	wchar_t** argVerbEnd = nullptr;
 
@@ -482,6 +483,37 @@ params ParseParams(int argc, wchar_t* argv[], bool quiet)
 	return p;
 }
 
+params ParseParams(int argc, wchar_t* argv[], bool quiet)
+{
+	// exclude all --special flags
+
+	paramflags flags;
+	std::vector<wchar_t*> args;
+	args.reserve(argc);
+
+	args.push_back(argv[0]);
+	for (int i = 1; i < argc; ++i) {
+		wchar_t* arg = argv[i];
+		if (arg && arg[0] && arg[1] && arg[0] == L'-' && arg[1] == L'-') {
+			if (iequals(arg, L"--noelevate")) {
+				flags.noelevate = true;
+			} else if (iequals(arg, L"--test")) {
+				flags.test = true;
+			} else {
+				args.push_back(arg);
+			}
+		} else {
+			args.push_back(arg);
+		}		
+	}
+
+	params p = ParseSqlParams(static_cast<int>(args.size()), static_cast<wchar_t**>(&args[0]), quiet);
+
+	p.flags = flags;
+	
+	return p;
+}
+
 std::wstring MakeParams(const params& p)
 {
 	std::wstring commandLine;
@@ -498,6 +530,13 @@ std::wstring MakeParams(const params& p)
 
 		commandLine += escapeCommandLine(str);
 	};
+
+	if (p.flags.noelevate) {
+		append(L"--noelevate");
+	}
+	if (p.flags.test) {
+		append(L"--test");
+	}
 
 	if (!p.instance.empty()) {
 		append(p.instance);

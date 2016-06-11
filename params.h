@@ -6,6 +6,12 @@
 
 #include "util.h"
 
+struct paramflags
+{
+	bool noelevate = false;
+	bool test = false;
+};
+
 struct params
 {
 	std::wstring instance;
@@ -22,6 +28,8 @@ struct params
 
 	HRESULT hr = S_OK;
 	std::wstring errorMessage;
+
+	paramflags flags;
 
 	friend std::wostream& operator<<(std::wostream& o, const params& p);
 

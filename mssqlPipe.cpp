@@ -1273,13 +1273,17 @@ int wmain(int argc, wchar_t* argv[])
 		::Sleep(10000);
 	}
 #endif
-#ifdef _DEBUG
-	assert(TestParseParams());
-#endif
 		
 	std::wcerr << L"\nmssqlPipe " << mssqlPipe_Version << L"\n" << std::endl;
 
 	params p = ParseParams(argc, argv, false);
+
+	if (p.flags.test) {
+#ifdef _DEBUG
+		bool parseParamsResult = TestParseParams();
+		assert(parseParamsResult);
+#endif
+	}
 	
 	if (SUCCEEDED(p.hr) && !p.command.empty()) {
 		p.hr = Run(p);
