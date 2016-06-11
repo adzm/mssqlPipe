@@ -4,6 +4,8 @@
 #include "util.h"
 #include "params.h"
 
+#include "pipestat.h"
+
 /****/
 
 constexpr auto mssqlPipe_Version = L"1.2.0";
@@ -159,14 +161,10 @@ HRESULT processPipeRestore(IClientVirtualDevice* pDevice, InputFile& file, bool 
 		std::wcerr << L"\nProcessing... " << std::endl;
 	}
 
-	DWORD ticksBegin = ::GetTickCount();
-	DWORD ticksLastStatus = ticksBegin;
+	pipestat ps(outputMutex_, quiet);
 
 	static const DWORD timeout = 10 * 60 * 1000;
 	HRESULT hr = S_OK;
-
-	__int64 totalBytes = 0;
-	DWORD totalCommands = 0;
 
 	for (;;) {
 		VDC_Command* pCmd = nullptr;		
@@ -194,15 +192,11 @@ HRESULT processPipeRestore(IClientVirtualDevice* pDevice, InputFile& file, bool 
 			break; // exit loop
 		}
 
-		++totalCommands;
-
 		switch (pCmd->commandCode) {
 		case VDC_Read:
 			while (bytesTransferred < pCmd->size) {
 				bytesTransferred += file.read(pCmd->buffer + bytesTransferred, pCmd->size - bytesTransferred);
 			}
-
-			totalBytes += bytesTransferred;
 
 			break;
 		case VDC_Write:
@@ -220,43 +214,15 @@ HRESULT processPipeRestore(IClientVirtualDevice* pDevice, InputFile& file, bool 
 
 		hr = pDevice->CompleteCommand(pCmd, completionCode, bytesTransferred, 0);
 
+		ps.accumulate(bytesTransferred);
+
 		if (!SUCCEEDED(hr)) {
 			// error message?
 			break;
 		}
-				
-		if (!quiet && totalBytes && (30000 < ::GetTickCount() - ticksLastStatus)) {
-			ticksLastStatus = ::GetTickCount();
-			DWORD ticksTotal = ticksLastStatus - ticksBegin;
-			DWORD seconds = ticksTotal / 1000;
-			if (!seconds) {
-				seconds = 1;
-			}
-			__int64 bytesPerSec = (totalBytes / seconds);
-			DWORD commandsPerSec = (totalCommands / seconds);
-			
-			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << L"\nProcessing... " << totalBytes
-				<< L" bytes in " << seconds << L" seconds (" << bytesPerSec << L" bytes/sec)"
-				<< std::endl;
-		}
 	}
 
-	if (!quiet && totalBytes) {
-		DWORD ticksTotal = ::GetTickCount() - ticksBegin;
-		DWORD seconds = ticksTotal / 1000;
-		if (!seconds) {
-			seconds = 1;
-		}
-		__int64 bytesPerSec = (totalBytes / seconds);
-		DWORD commandsPerSec = (totalCommands / seconds);
-		
-		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::wcerr << L"\nTotal " << totalBytes
-			<< L" bytes in " << seconds << L" seconds (" << bytesPerSec << L" bytes/sec) and "
-			<< totalCommands << L" commands (" << commandsPerSec << L" command/sec)"
-			<< std::endl;
-	}
+	ps.finalize();
 	
 	return hr;
 }
@@ -272,15 +238,11 @@ HRESULT processPipeBackup(IClientVirtualDevice* pDevice, OutputFile& file, bool 
 		std::wcerr << L"\nProcessing... " << std::endl;
 	}
 
-	DWORD ticksBegin = ::GetTickCount();
-	DWORD ticksLastStatus = ticksBegin;
+	pipestat ps(outputMutex_, quiet);
 
 	static const DWORD timeout = 10 * 60 * 1000;
 	HRESULT hr = S_OK;
-
-	__int64 totalBytes = 0;
-	DWORD totalCommands = 0;
-
+	
 	for (;;) {
 		VDC_Command* pCmd = nullptr;		
 		DWORD completionCode = 0;
@@ -307,8 +269,6 @@ HRESULT processPipeBackup(IClientVirtualDevice* pDevice, OutputFile& file, bool 
 			break; // exit loop
 		}
 
-		++totalCommands;
-
 		switch (pCmd->commandCode) {
 		case VDC_Read:
 			completionCode = ERROR_NOT_SUPPORTED;
@@ -317,9 +277,6 @@ HRESULT processPipeBackup(IClientVirtualDevice* pDevice, OutputFile& file, bool 
 			while (bytesTransferred < pCmd->size) {
 				bytesTransferred += file.write(pCmd->buffer + bytesTransferred, pCmd->size - bytesTransferred);
 			}
-
-			totalBytes += bytesTransferred;
-
 			break;
 		case VDC_Flush:
 			file.flush();
@@ -337,39 +294,11 @@ HRESULT processPipeBackup(IClientVirtualDevice* pDevice, OutputFile& file, bool 
 			// error message?
 			break;
 		}
-				
-		if (!quiet && totalBytes && (30000 < ::GetTickCount() - ticksLastStatus)) {
-			ticksLastStatus = ::GetTickCount();
-			DWORD ticksTotal = ticksLastStatus - ticksBegin;
-			DWORD seconds = ticksTotal / 1000;
-			if (!seconds) {
-				seconds = 1;
-			}
-			__int64 bytesPerSec = (totalBytes / seconds);
-			DWORD commandsPerSec = (totalCommands / seconds);
-			
-			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << L"\nProcessing... " << totalBytes
-				<< L" bytes in " << seconds << L" seconds (" << bytesPerSec << L" bytes/sec)"
-				<< std::endl;
-		}
+
+		ps.accumulate(bytesTransferred);
 	}
 
-	if (!quiet && totalBytes) {
-		DWORD ticksTotal = ::GetTickCount() - ticksBegin;
-		DWORD seconds = ticksTotal / 1000;
-		if (!seconds) {
-			seconds = 1;
-		}
-		__int64 bytesPerSec = (totalBytes / seconds);
-		DWORD commandsPerSec = (totalCommands / seconds);
-
-		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::wcerr << L"\nTotal " << totalBytes
-			<< L" bytes in " << seconds << L" seconds (" << bytesPerSec << L" bytes/sec) and "
-			<< totalCommands << L" commands (" << commandsPerSec << L" command/sec)"
-			<< std::endl;
-	}
+	ps.finalize();
 	
 	return hr;
 }
