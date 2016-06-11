@@ -817,13 +817,20 @@ void traceAdoErrors(ADODB::_Connection* pCon)
 			if (!error) {
 				continue;
 			}
-			std::wcerr << L"[" << i << L"]"
+			std::wcerr
+				<< error->Description
 				<< L"\t" << std::hex << error->Number << std::dec
 				<< L"\t" << error->NativeError
 				<< L"\t" << error->SQLState
-				<< L"\t" << error->Description
-				<< L"\t" << error->Source
 				<< std::endl;
+			//std::wcerr 
+			//	<< L"[" << i << L"]"
+			//	<< L"\t" << std::hex << error->Number << std::dec
+			//	<< L"\t" << error->NativeError
+			//	<< L"\t" << error->SQLState
+			//	<< L"\t" << error->Description
+			//	<< L"\t" << error->Source
+			//	<< std::endl;
 		}
 	}
 
