@@ -30,12 +30,21 @@
     <ClInclude Include="vdi\vdiguid.h">
       <Filter>Header Files\vdi</Filter>
     </ClInclude>
+    <ClInclude Include="params.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="util.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="mssqlPipe.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="params.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

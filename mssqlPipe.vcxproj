@@ -76,13 +76,16 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="params.h" />
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="util.h" />
     <ClInclude Include="vdi\vdi.h" />
     <ClInclude Include="vdi\vdierror.h" />
     <ClInclude Include="vdi\vdiguid.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="mssqlPipe.cpp" />
+    <ClCompile Include="params.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>

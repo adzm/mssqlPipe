@@ -26,6 +26,8 @@
 #include <set>
 
 #include <string>
+#include <algorithm>
+
 #include <iostream>
 #include <sstream>
 
