@@ -8,7 +8,7 @@
 
 /****/
 
-constexpr auto mssqlPipe_Version = L"1.2.0";
+constexpr auto mssqlPipe_Version = "1.2.0";
 
 /****/
 
@@ -158,7 +158,7 @@ HRESULT processPipeRestore(IClientVirtualDevice* pDevice, InputFile& file, bool 
 
 	if (!quiet) {			
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::wcerr << L"\nProcessing... " << std::endl;
+		std::cerr << "\nProcessing... " << std::endl;
 	}
 
 	pipestat ps(outputMutex_, quiet);
@@ -235,7 +235,7 @@ HRESULT processPipeBackup(IClientVirtualDevice* pDevice, OutputFile& file, bool 
 
 	if (!quiet) {			
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::wcerr << L"\nProcessing... " << std::endl;
+		std::cerr << "\nProcessing... " << std::endl;
 	}
 
 	pipestat ps(outputMutex_, quiet);
@@ -312,10 +312,10 @@ struct VirtualDevice
 		
 	VDConfig config;
 	
-	std::wstring instance;
-	std::wstring name;
+	std::string instance;
+	std::string name;
 
-	VirtualDevice(std::wstring instance, std::wstring name)
+	VirtualDevice(std::string instance, std::string name)
 		: instance(std::move(instance))
 		, name(std::move(name))
 		, config({ 1 })
@@ -352,16 +352,16 @@ struct VirtualDevice
 		hr = pSet.CreateInstance(CLSID_MSSQL_ClientVirtualDeviceSet);
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << L"Failed to cocreate device set: " << std::hex << hr << std::dec << std::endl;
+			std::cerr << "Failed to cocreate device set: " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 
-		const wchar_t* wInstance = instance.empty() ? nullptr : (const wchar_t*)instance.c_str();
+		const char* wInstance = instance.empty() ? nullptr : (const char*)instance.c_str();
 
 		hr = pSet->CreateEx(wInstance, name.c_str(), &config);
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << L"Failed to create device set: " << std::hex << hr << std::dec << std::endl;
+			std::cerr << "Failed to create device set: " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 		else {			
@@ -378,7 +378,7 @@ struct VirtualDevice
 		if (!SUCCEEDED(hr)) {
 			pSet->Close();
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << L"Failed to initialize backup operation: " << std::hex << hr << std::dec << std::endl;
+			std::cerr << "Failed to initialize backup operation: " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 
@@ -386,7 +386,7 @@ struct VirtualDevice
 		if (!SUCCEEDED(hr)) {
 			pSet->Close();
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << L"Failed to open backup device: " << std::hex << hr << std::dec << std::endl;
+			std::cerr << "Failed to open backup device: " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 
@@ -396,7 +396,7 @@ struct VirtualDevice
 
 /****/
 
-std::wstring EscapeConnectionStringValue(const std::wstring& val)
+std::string EscapeConnectionStringValue(const std::string& val)
 {
 	auto pos = val.begin();
 
@@ -430,10 +430,10 @@ std::wstring EscapeConnectionStringValue(const std::wstring& val)
 		return val;
 	}
 
-	std::wstring esc;
+	std::string esc;
 	esc.reserve(val.length() + 2 + (totalCount * 2));
 
-	wchar_t c = L'\'';
+	char c = L'\'';
 	if (singleCount && !doubleCount) {
 		c = L'\"';
 	}
@@ -453,46 +453,46 @@ std::wstring EscapeConnectionStringValue(const std::wstring& val)
 	return esc;
 }
 
-std::wstring MakeConnectionString(const std::wstring& instance, const std::wstring& username, const std::wstring& password)
+std::string MakeConnectionString(const std::string& instance, const std::string& username, const std::string& password)
 {
-	std::wstring connectionString;
+	std::string connectionString;
 
 	connectionString.reserve(256);
 		
 	// SQLNCLI might be a better option, but SQLOLEDB is ubiquitous. 
-	connectionString = L"Provider=SQLOLEDB;Initial Catalog=master;";
+	connectionString = "Provider=SQLOLEDB;Initial Catalog=master;";
 	
 	if (username.empty()) {
-		connectionString += L"Integrated Security=SSPI;";
+		connectionString += "Integrated Security=SSPI;";
 	}
 	else {
-		connectionString += L"User ID=";
+		connectionString += "User ID=";
 		connectionString += EscapeConnectionStringValue(username);
-		connectionString += L";Password=";
+		connectionString += ";Password=";
 		connectionString += EscapeConnectionStringValue(password);
-		connectionString += L";";
+		connectionString += ";";
 	}
 
-	connectionString += L"Data Source=";
+	connectionString += "Data Source=";
 
-	std::wstring dataSource = L"lpc:.";
+	std::string dataSource = "lpc:.";
 	if (!instance.empty()) {
-		dataSource += L"\\";
+		dataSource += "\\";
 		dataSource += instance;
 	}
 
 	connectionString += EscapeConnectionStringValue(dataSource);
-	connectionString += L";";
+	connectionString += ";";
 
 	return connectionString;
 }
 
-ADODB::_ConnectionPtr Connect(std::wstring connectionString)
+ADODB::_ConnectionPtr Connect(std::string connectionString)
 {
 	try {
 		ADODB::_ConnectionPtr pCon(__uuidof(ADODB::Connection));
 
-		pCon->Open(connectionString.c_str(), L"", L"", ADODB::adConnectUnspecified);
+		pCon->Open(connectionString.c_str(), "", "", ADODB::adConnectUnspecified);
 
 		pCon->CommandTimeout = 0;
 
@@ -502,9 +502,9 @@ ADODB::_ConnectionPtr Connect(std::wstring connectionString)
 	}
 	catch (_com_error& e) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::wcerr << L"Could not connect to " << connectionString << std::endl;
-		std::wcerr << std::hex << e.Error() << std::dec << L": " << e.ErrorMessage() << std::endl;
-		std::wcerr << e.Description() << std::endl;
+		std::cerr << "Could not connect to " << connectionString << std::endl;
+		std::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
+		std::cerr << e.Description() << std::endl;
 
 		return nullptr;
 	}
@@ -529,19 +529,19 @@ void traceAdoErrors(ADODB::_Connection* pCon)
 			if (!error) {
 				continue;
 			}
-			std::wcerr
+			std::cerr
 				<< error->Description
-				<< L"\t" << std::hex << error->Number << std::dec
-				<< L"\t" << error->NativeError
-				<< L"\t" << error->SQLState
+				<< "\t" << std::hex << error->Number << std::dec
+				<< "\t" << error->NativeError
+				<< "\t" << error->SQLState
 				<< std::endl;
-			//std::wcerr 
-			//	<< L"[" << i << L"]"
-			//	<< L"\t" << std::hex << error->Number << std::dec
-			//	<< L"\t" << error->NativeError
-			//	<< L"\t" << error->SQLState
-			//	<< L"\t" << error->Description
-			//	<< L"\t" << error->Source
+			//std::cerr 
+			//	<< "[" << i << "]"
+			//	<< "\t" << std::hex << error->Number << std::dec
+			//	<< "\t" << error->NativeError
+			//	<< "\t" << error->SQLState
+			//	<< "\t" << error->Description
+			//	<< "\t" << error->Source
 			//	<< std::endl;
 		}
 	}
@@ -569,13 +569,13 @@ void traceAdoRecordset(ADODB::_Recordset* pRs)
 		}
 		auto name = field->Name;
 		if (!name.length()) {
-			std::wcerr << L"\t[" << x << L"]";
+			std::cerr << "\t[" << x << "]";
 		}
 		else {
-			std::wcerr << L"\t[" << field->Name << L"]";
+			std::cerr << "\t[" << field->Name << "]";
 		}
 	}
-	std::wcerr << std::endl;
+	std::cerr << std::endl;
 
 	while (!pRs->eof) {
 		for (long x = 0; x < count; ++x) {
@@ -589,16 +589,16 @@ void traceAdoRecordset(ADODB::_Recordset* pRs)
 			}
 
 			if (SUCCEEDED(hrChange) && var.vt == VT_BSTR) {
-				std::wcerr << L"\t" << var.bstrVal;
+				std::cerr << "\t" << var.bstrVal;
 			}
 			else if (var.vt == VT_NULL) {
-				std::wcerr << L"\t";
+				std::cerr << "\t";
 			}
 			else {
-				std::wcerr << L"\t?";
+				std::cerr << "\t?";
 			}
 		}
-		std::wcerr << std::endl;
+		std::cerr << std::endl;
 		pRs->MoveNext();
 	}
 }
@@ -607,21 +607,21 @@ void traceAdoRecordset(ADODB::_Recordset* pRs)
 
 struct DbFile
 {
-	std::wstring logicalName;
-	std::wstring physicalName;
-	std::wstring type;
+	std::string logicalName;
+	std::string physicalName;
+	std::string type;
 };
 
-HRESULT RunPrepareRestoreDatabase(VirtualDevice& vd, params p, InputFile& inputFile, std::wstring& dataPath, std::wstring& logPath, std::vector<DbFile>& fileList, bool quiet)
+HRESULT RunPrepareRestoreDatabase(VirtualDevice& vd, params p, InputFile& inputFile, std::string& dataPath, std::string& logPath, std::vector<DbFile>& fileList, bool quiet)
 {
 	HRESULT hr = 0;
 
-	std::wstring connectionString = MakeConnectionString(p.instance, p.username, p.password);
+	std::string connectionString = MakeConnectionString(p.instance, p.username, p.password);
 
-	std::wstring sql;
+	std::string sql;
 	{
-		std::wostringstream o;
-		o << L"restore filelistonly from virtual_device=N'" << escape(p.device) << L"';";
+		std::ostringstream o;
+		o << "restore filelistonly from virtual_device=N'" << escape(p.device) << "';";
 		sql = o.str();
 	}
 
@@ -649,9 +649,9 @@ HRESULT RunPrepareRestoreDatabase(VirtualDevice& vd, params p, InputFile& inputF
 
 			for (; pRs && !pRs->eof; pRs->MoveNext()) {
 				DbFile f;
-				f.logicalName = pRs->Fields->Item[L"LogicalName"]->Value.bstrVal;
-				f.physicalName = pRs->Fields->Item[L"PhysicalName"]->Value.bstrVal;
-				f.type = pRs->Fields->Item[L"Type"]->Value.bstrVal;
+				f.logicalName = pRs->Fields->Item["LogicalName"]->Value.bstrVal;
+				f.physicalName = pRs->Fields->Item["PhysicalName"]->Value.bstrVal;
+				f.type = pRs->Fields->Item["Type"]->Value.bstrVal;
 
 				fileList.push_back(f);
 			}
@@ -663,8 +663,8 @@ HRESULT RunPrepareRestoreDatabase(VirtualDevice& vd, params p, InputFile& inputF
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << std::hex << e.Error() << std::dec << L": " << e.ErrorMessage() << std::endl;
-			std::wcerr << e.Description() << std::endl;
+			std::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
+			std::cerr << e.Description() << std::endl;
 			return e.Error();
 		}
 	});
@@ -679,7 +679,7 @@ HRESULT RunPrepareRestoreDatabase(VirtualDevice& vd, params p, InputFile& inputF
 			}
 			
 			// InstanceDefaultDataPath and InstanceDefaultLogPath are SQL2012+
-			auto query = LR"(
+			auto query = R"(
 ;with database_info as (
 select 
 	substring(physical_name, 1, len(physical_name) - charindex('\', reverse(physical_name))) as physical_path
@@ -712,8 +712,8 @@ select
 
 			if (!pRs->eof) {
 				
-				dataPath = pRs->Fields->Item[L"DefaultData"]->Value.bstrVal;
-				logPath = pRs->Fields->Item[L"DefaultLog"]->Value.bstrVal;
+				dataPath = pRs->Fields->Item["DefaultData"]->Value.bstrVal;
+				logPath = pRs->Fields->Item["DefaultLog"]->Value.bstrVal;
 
 				traceAdoErrors(pCon);
 			}
@@ -724,8 +724,8 @@ select
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << std::hex << e.Error() << std::dec << L": " << e.ErrorMessage() << std::endl;
-			std::wcerr << e.Description() << std::endl;
+			std::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
+			std::cerr << e.Description() << std::endl;
 			return e.Error();
 		}
 	});
@@ -758,15 +758,15 @@ select
 	return hr;
 }
 
-HRESULT RunRestoreDatabase(VirtualDevice& vd, params p, std::wstring sql, InputFile& inputFile, bool quiet)
+HRESULT RunRestoreDatabase(VirtualDevice& vd, params p, std::string sql, InputFile& inputFile, bool quiet)
 {
 	HRESULT hr = 0;
 
-	std::wstring connectionString = MakeConnectionString(p.instance, p.username, p.password);
+	std::string connectionString = MakeConnectionString(p.instance, p.username, p.password);
 
 	if (!quiet) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::wcerr << L"Restoring via virtual device " << p.device << std::endl;
+		std::cerr << "Restoring via virtual device " << p.device << std::endl;
 	}
 	
 	auto pipeResult = std::async([&vd, &inputFile, &p, quiet]{
@@ -807,8 +807,8 @@ HRESULT RunRestoreDatabase(VirtualDevice& vd, params p, std::wstring sql, InputF
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << std::hex << e.Error() << std::dec << L": " << e.ErrorMessage() << std::endl;
-			std::wcerr << e.Description() << std::endl;
+			std::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
+			std::cerr << e.Description() << std::endl;
 			return e.Error();
 		}
 	});
@@ -832,7 +832,7 @@ HRESULT RunRestoreDatabase(VirtualDevice& vd, params p, std::wstring sql, InputF
 	return hr;
 }
 
-std::wstring BuildRestoreCommand(params p, std::wstring dataPath, std::wstring logPath, const std::vector<DbFile>& fileList)
+std::string BuildRestoreCommand(params p, std::string dataPath, std::string logPath, const std::vector<DbFile>& fileList)
 {
 	if (!p.to.empty()) {
 		dataPath = p.to;
@@ -846,49 +846,49 @@ std::wstring BuildRestoreCommand(params p, std::wstring dataPath, std::wstring l
 		logPath += L'\\';
 	}
 
-	std::wostringstream o;
-	o << L"restore database [" << escape(p.database) << L"] from virtual_device=N'" << escape(p.device) << L"' with ";
+	std::ostringstream o;
+	o << "restore database [" << escape(p.database) << "] from virtual_device=N'" << escape(p.device) << "' with ";
 	
-	if (iequals(p.subcommand, L"replace")) {
-		o << L"replace, ";
+	if (iequals(p.subcommand, "replace")) {
+		o << "replace, ";
 	}
 
 	// build moves?
 	if (!fileList.empty()) {
-		std::set<std::wstring, iless_predicate> fileRoots;
+		std::set<std::string, iless_predicate> fileRoots;
 		for (auto file : fileList) {
-			std::wstring targetBase;
-			if (iequals(file.type, L"D")) {
-				targetBase = dataPath + p.database + L"_dat";
+			std::string targetBase;
+			if (iequals(file.type, "D")) {
+				targetBase = dataPath + p.database + "_dat";
 			}
 			else {
-				targetBase = logPath + p.database + L"_log";
+				targetBase = logPath + p.database + "_log";
 			}
 			
-			std::wstring target = targetBase;
+			std::string target = targetBase;
 			size_t ordinal = 1;
 			while (fileRoots.count(target)) {
 				++ordinal;
-				std::wostringstream newTarget;
+				std::ostringstream newTarget;
 				newTarget << target << ordinal;
 				target = newTarget.str();
 			}
 			fileRoots.insert(target);
 						
-			if (iequals(file.type, L"D")) {
-				target += L".mdf";
+			if (iequals(file.type, "D")) {
+				target += ".mdf";
 			}
 			else {
-				target += L".ldf";
+				target += ".ldf";
 			}
 
-			o << L"move N'" << escape(file.logicalName) << L"' to N'" << escape(target) << L"', ";
+			o << "move N'" << escape(file.logicalName) << "' to N'" << escape(target) << "', ";
 		}
 	}
 		
-	o << L"nounload"; // noop basically, so i dont have to deal with trailing comma
+	o << "nounload"; // noop basically, so i dont have to deal with trailing comma
 
-	o << L";";
+	o << ";";
 	
 	return o.str();
 }
@@ -899,16 +899,16 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 
 	InputFile inputFile(hFile, 0x10000);
 
-	if (iequals(p.subcommand, L"filelistonly")) {
+	if (iequals(p.subcommand, "filelistonly")) {
 		
-		std::wostringstream o;
-		o << L"restore filelistonly from virtual_device=N'" << escape(p.device) << L"';";
+		std::ostringstream o;
+		o << "restore filelistonly from virtual_device=N'" << escape(p.device) << "';";
 
 		hr = RunRestoreDatabase(vd, p, o.str(), inputFile, true);
 	
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << L"RunRestoreDatabase generic failed with " << std::hex << hr << std::dec << std::endl;
+			std::cerr << "RunRestoreDatabase generic failed with " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 
@@ -916,8 +916,8 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 	}
 
 	std::vector<DbFile> fileList;
-	std::wstring dataPath;
-	std::wstring logPath;
+	std::string dataPath;
+	std::string logPath;
 
 	{
 		params altp = p;
@@ -932,7 +932,7 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 		hr = RunPrepareRestoreDatabase(altvd, altp, inputFile, dataPath, logPath, fileList, true);
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << L"RunRestoreFileListOnly failed with " << std::hex << hr << std::dec << std::endl;
+			std::cerr << "RunRestoreFileListOnly failed with " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 	}
@@ -940,7 +940,7 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 	hr = inputFile.resetPos();
 	if (!SUCCEEDED(hr)) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::wcerr << L"RunRestore failed to reset buffered input pos with " << std::hex << hr << std::dec << std::endl;
+		std::cerr << "RunRestore failed to reset buffered input pos with " << std::hex << hr << std::dec << std::endl;
 		return hr;
 	}
 	
@@ -950,7 +950,7 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 	
 	if (!SUCCEEDED(hr)) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::wcerr << L"RunRestoreDatabase failed with " << std::hex << hr << std::dec << std::endl;
+		std::cerr << "RunRestoreDatabase failed with " << std::hex << hr << std::dec << std::endl;
 		return hr;
 	}
 
@@ -961,19 +961,19 @@ HRESULT RunBackup(VirtualDevice& vd, params p, HANDLE hFile)
 {
 	HRESULT hr = 0;
 
-	std::wstring connectionString = MakeConnectionString(p.instance, p.username, p.password);
+	std::string connectionString = MakeConnectionString(p.instance, p.username, p.password);
 
-	std::wstring sql;
+	std::string sql;
 	{
-		std::wostringstream o;
+		std::ostringstream o;
 		// always do copy_only, could be an option in the future
-		o << L"backup database [" << escape(p.database) << L"] to virtual_device=N'" << escape(p.device) << L"' with copy_only;";
+		o << "backup database [" << escape(p.database) << "] to virtual_device=N'" << escape(p.device) << "' with copy_only;";
 		sql = o.str();
 	}
 
 	{
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::wcerr << L"Backing up via virtual device " << p.device << std::endl;
+		std::cerr << "Backing up via virtual device " << p.device << std::endl;
 	}
 
 	OutputFile outputFile(hFile);
@@ -1016,8 +1016,8 @@ HRESULT RunBackup(VirtualDevice& vd, params p, HANDLE hFile)
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::wcerr << std::hex << e.Error() << std::dec << L": " << e.ErrorMessage() << std::endl;
-			std::wcerr << e.Description() << std::endl;
+			std::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
+			std::cerr << e.Description() << std::endl;
 			return e.Error();
 		}
 	});
@@ -1047,13 +1047,13 @@ HRESULT RunPipe(VirtualDevice& vd, params p, HANDLE hFile)
 
 	{
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::wcerr << L"Piping " << p.subcommand << L" virtual device " << p.device << std::endl;
+		std::cerr << "Piping " << p.subcommand << " virtual device " << p.device << std::endl;
 	}
 
 	// in pipe mode, use a much larger than the default timeout, say 5 minutes
 	DWORD pipeTimeout = 5 * 60 * 1000;
 
-	if (iequals(p.subcommand, L"from")) {
+	if (iequals(p.subcommand, "from")) {
 		OutputFile outputFile(hFile);
 
 		auto pipeResult = std::async([&vd, &outputFile, pipeTimeout]{
@@ -1065,7 +1065,7 @@ HRESULT RunPipe(VirtualDevice& vd, params p, HANDLE hFile)
 
 		hr = pipeResult.get();
 	}
-	else if (iequals(p.subcommand, L"to")) {
+	else if (iequals(p.subcommand, "to")) {
 
 		InputFile inputFile(hFile, 0); // no buffering
 
@@ -1082,10 +1082,10 @@ HRESULT RunPipe(VirtualDevice& vd, params p, HANDLE hFile)
 	return hr;
 }	
 
-HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe, std::wstring stderrPipe)
+HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::string namedPipe, std::string stderrPipe)
 {
 	if (!hInput && !hOutput) {
-		std::wcerr << L"Invalid command for elevation" << std::endl;
+		std::cerr << "Invalid command for elevation" << std::endl;
 		return E_FAIL;
 	}
 	
@@ -1112,15 +1112,15 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe,
 	// launch
 	HANDLE hProcess = nullptr;
 	{
-		std::wstring args = MakeParams(p);
+		std::string args = MakeParams(p);
 		SHELLEXECUTEINFO sei = { sizeof(sei) };
 
-		wchar_t thisModuleFileName[MAX_PATH];
+		char thisModuleFileName[MAX_PATH];
 		::GetModuleFileName(nullptr, thisModuleFileName, _countof(thisModuleFileName));
 
 		sei.fMask = 0 | SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
 		sei.hwnd = NULL;
-		sei.lpVerb = L"runas";
+		sei.lpVerb = "runas";
 		sei.lpFile = thisModuleFileName;
 		sei.lpParameters = args.c_str();
 		sei.lpDirectory = NULL;
@@ -1154,10 +1154,10 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe,
 		DWORD lastError = ::GetLastError();
 		::CloseHandle(hStderrPipe);
 
-		std::wcerr << L"Warning: failed to connect to stderr pipe: " << lastError << std::endl;
+		std::cerr << "Warning: failed to connect to stderr pipe: " << lastError << std::endl;
 	}
 
-	std::wcerr << L"Piping with elevated process id " << ::GetProcessId(hProcess) << L"!" << std::endl;
+	std::cerr << "Piping with elevated process id " << ::GetProcessId(hProcess) << "!" << std::endl;
 
 	if (!hOutput) {
 		hOutput = hPipe;
@@ -1219,7 +1219,7 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe,
 
 						auto szErr = (const char*)buf.get();
 
-						std::wcerr << szErr << std::flush;
+						std::cerr << szErr << std::flush;
 					}
 				} while (dwBytesAvail > 0);
 			}
@@ -1247,10 +1247,10 @@ HRESULT Run(params p)
 	HANDLE hStdOut = ::GetStdHandle(STD_OUTPUT_HANDLE);
 	HANDLE hStdErr = ::GetStdHandle(STD_ERROR_HANDLE);
 
-	if (0 == p.to.find(LR"(\\.\pipe\mssqlPipe_)")) {
+	if (0 == p.to.find(R"(\\.\pipe\mssqlPipe_)")) {
 		::WaitNamedPipe(p.to.c_str(), NMPWAIT_USE_DEFAULT_WAIT);
 	}
-	if (0 == p.from.find(LR"(\\.\pipe\mssqlPipe_)")) {
+	if (0 == p.from.find(R"(\\.\pipe\mssqlPipe_)")) {
 		::WaitNamedPipe(p.from.c_str(), NMPWAIT_USE_DEFAULT_WAIT);
 	}
 
@@ -1262,7 +1262,7 @@ HRESULT Run(params p)
 			hFile = ::CreateFile(p.to.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 			if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 				DWORD ret = ::GetLastError();
-				std::wcerr << ret << L": Failed to open " << p.to << std::endl;
+				std::cerr << ret << ": Failed to open " << p.to << std::endl;
 				return E_FAIL;
 			}
 		}
@@ -1271,7 +1271,7 @@ HRESULT Run(params p)
 		if (!p.to.empty() && INVALID_FILE_ATTRIBUTES == ::GetFileAttributes(p.to.c_str())) {
 			int ret = ::SHCreateDirectoryEx(nullptr, p.to.c_str(), nullptr);
 			if (ret && ret != ERROR_FILE_EXISTS && ret != ERROR_ALREADY_EXISTS) {
-				std::wcerr << ret << L": Failed to create restore to path. Continuing (SQL Server may have access)... " << p.from << std::endl;
+				std::cerr << ret << ": Failed to create restore to path. Continuing (SQL Server may have access)... " << p.from << std::endl;
 			}
 		}
 		if (p.from.empty()) {
@@ -1281,13 +1281,13 @@ HRESULT Run(params p)
 			hFile = ::CreateFile(p.from.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 			if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 				DWORD ret = ::GetLastError();
-				std::wcerr << ret << L": Failed to open " << p.from << std::endl;
+				std::cerr << ret << ": Failed to open " << p.from << std::endl;
 				return E_FAIL;
 			}
 		}
 	}
 	else if (p.isPipe()) {
-		if (iequals(p.subcommand, L"to")) {
+		if (iequals(p.subcommand, "to")) {
 			if (p.from.empty()) {
 				hFile = hStdIn;
 			}
@@ -1295,12 +1295,12 @@ HRESULT Run(params p)
 				hFile = ::CreateFile(p.from.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 				if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 					DWORD ret = ::GetLastError();
-					std::wcerr << ret << L": Failed to open " << p.from << std::endl;
+					std::cerr << ret << ": Failed to open " << p.from << std::endl;
 					return E_FAIL;
 				}
 			}
 		}
-		else if (iequals(p.subcommand, L"from")) {
+		else if (iequals(p.subcommand, "from")) {
 			if (p.to.empty()) {
 				hFile = hStdOut;
 			}
@@ -1308,7 +1308,7 @@ HRESULT Run(params p)
 				hFile = ::CreateFile(p.to.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 				if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 					DWORD ret = ::GetLastError();
-					std::wcerr << ret << L": Failed to open " << p.to << std::endl;
+					std::cerr << ret << ": Failed to open " << p.to << std::endl;
 					return E_FAIL;
 				}
 			}
@@ -1316,7 +1316,7 @@ HRESULT Run(params p)
 	}
 
 	if (!hFile) {
-		std::wcerr << L"missing file" << std::endl;
+		std::cerr << "missing file" << std::endl;
 		return E_FAIL;
 	}
 
@@ -1326,22 +1326,22 @@ HRESULT Run(params p)
 	hr = vd.Create();
 	if (!SUCCEEDED(hr)) {
 		if (E_ACCESSDENIED == hr && !p.flags.noelevate) {
-			std::wcerr << L"Run failed with E_ACCESSDENIED!" << std::endl;
-			std::wcerr << L"Attempting to elevate and redirect io..." << std::endl;
+			std::cerr << "Run failed with E_ACCESSDENIED!" << std::endl;
+			std::cerr << "Attempting to elevate and redirect io..." << std::endl;
 
-			std::wstring unique = make_guid().substr(1, 8);
+			std::string unique = make_guid().substr(1, 8);
 
-			std::wstring namedPipe;
+			std::string namedPipe;
 			{
-				std::wostringstream o;
-				o << LR"(\\.\pipe\mssqlPipe_)" << L"stdio_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << L"_" << unique;
+				std::ostringstream o;
+				o << R"(\\.\pipe\mssqlPipe_)" << "stdio_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << "_" << unique;
 				namedPipe = o.str();
 			}
 
-			std::wstring stderrPipe;
+			std::string stderrPipe;
 			{
-				std::wostringstream o;
-				o << LR"(\\.\pipe\mssqlPipe_)" << L"stderr_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << L"_" << unique;
+				std::ostringstream o;
+				o << R"(\\.\pipe\mssqlPipe_)" << "stderr_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << "_" << unique;
 				stderrPipe = o.str();
 			}
 
@@ -1360,10 +1360,10 @@ HRESULT Run(params p)
 				p.from = namedPipe;
 			}
 			else if (p.isPipe()) {
-				if (iequals(p.subcommand, L"to")) {
+				if (iequals(p.subcommand, "to")) {
 					hInput = hFile;
 					p.from = namedPipe;
-				} else if (iequals(p.subcommand, L"from")) {
+				} else if (iequals(p.subcommand, "from")) {
 					hOutput = hFile;
 					p.to = namedPipe;
 				}
@@ -1384,7 +1384,7 @@ HRESULT Run(params p)
 		hr = RunPipe(vd, p, hFile);
 	}
 	else {		
-		std::wcerr << L"unexpected command " << p.command << std::endl;
+		std::cerr << "unexpected command " << p.command << std::endl;
 		hr = E_FAIL;
 	}
 	
@@ -1400,52 +1400,67 @@ HRESULT Run(params p)
 /****/
 
 
-int wmain(int argc, wchar_t* argv[])
+int wmain(int argc, wchar_t* wargv[])
 {
 	CoInit comInit;
+
+	std::vector<std::string> u8args;
+
+	for (int i = 0; i < argc; ++i)
+	{
+		u8args.push_back(narrow(wargv[i]));
+	}
+
+	std::vector<const char*> argptrs;
+
+	for (const auto& arg : u8args) {
+		argptrs.push_back(arg.c_str());
+	}
+
+	const char** argv[] = (const char**)&argptrs[0];
 
 #ifdef _DEBUG
 	bool waitForDebugger = true;
 	waitForDebugger = false;
 	if (waitForDebugger && !::IsDebuggerPresent()) {
-		std::wcerr << L"Waiting for debugger..." << std::endl;
+		std::cerr << "Waiting for debugger..." << std::endl;
 		::Sleep(10000);
 	}
 #endif
 
-	struct TeeAndRedirect_wcerr
+	struct TeeAndRedirect_cerr
 	{
-		TeeAndRedirect_wcerr(const wchar_t* fileName)
-			: out(fileName, std::ios::out)
-			, wcerrbuf(std::wcerr.rdbuf())
-			, tee(wcerrbuf, out.rdbuf())
+		TeeAndRedirect_cerr(const char* fileName)
+			: out(widen(fileName), std::ios::out)
+			, cerrbuf(std::cerr.rdbuf())
+			, tee(cerrbuf, out.rdbuf())
 		{
-			std::wcerr.rdbuf(&tee);
+			std::cerr.rdbuf(&tee);
 		}
 
-		~TeeAndRedirect_wcerr()
+		~TeeAndRedirect_cerr()
 		{
-			std::wcerr.rdbuf(wcerrbuf);
+			std::cerr.rdbuf(cerrbuf);
 		}
 
-		std::wofstream out;
-		std::basic_streambuf<wchar_t>* wcerrbuf = nullptr;
-		wteebuf tee;
+		std::ofstream out;
+		std::basic_streambuf<char>* cerrbuf = nullptr;
+		teebuf tee;
 	};
 		
-	std::wcerr << L"\nmssqlPipe " << mssqlPipe_Version << L"\n" << std::endl;
+	std::cerr << "\nmssqlPipe " << mssqlPipe_Version << "\n" << std::endl;
 
 	params p = ParseParams(argc, argv, false);
 
-	std::unique_ptr<TeeAndRedirect_wcerr> pTeeAndRedirectWcerr;
+	std::unique_ptr<TeeAndRedirect_cerr> pTeeAndRedirectCerr;
 
 	if (!p.flags.tee.empty()) {
-		if (0 == p.flags.tee.find(LR"(\\.\pipe\mssqlPipe_)")) {
+		if (0 == p.flags.tee.find(R"(\\.\pipe\mssqlPipe_)")) {
 			::WaitNamedPipe(p.flags.tee.c_str(), NMPWAIT_USE_DEFAULT_WAIT);
 		}
-		pTeeAndRedirectWcerr = std::make_unique<TeeAndRedirect_wcerr>(p.flags.tee.c_str());
+		pTeeAndRedirectCerr = std::make_unique<TeeAndRedirect_cerr>(p.flags.tee.c_str());
 
-		std::wcerr << L"tee stderr to " << p.flags.tee << std::endl;
+		std::cerr << "tee stderr to " << p.flags.tee << std::endl;
 	}
 
 	if (p.flags.test) {
@@ -1460,10 +1475,10 @@ int wmain(int argc, wchar_t* argv[])
 	}
 
 	if (E_ACCESSDENIED == p.hr) {
-		std::wcerr << L"Run failed with E_ACCESSDENIED; mssqlPipe may need to run as an administrator." << std::endl;
+		std::cerr << "Run failed with E_ACCESSDENIED; mssqlPipe may need to run as an administrator." << std::endl;
 	}
 
-	pTeeAndRedirectWcerr.reset();
+	pTeeAndRedirectCerr.reset();
 
 #ifdef _DEBUG
 	::Sleep(5000);

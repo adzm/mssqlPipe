@@ -7,7 +7,7 @@
 
 void showUsage()
 {
-	std::wcerr << LR"(
+	std::cerr << R"(
 Usage:
 
 mssqlPipe [instance] [as username[:password]] (backup|restore|pipe) ... 
@@ -33,18 +33,18 @@ mssqlPipe pipe to VirtualDevice42 < input.bak
 Happy piping!
 )";
 
-	std::wcerr << std::endl;
+	std::cerr << std::endl;
 }
 
-inline std::wstring escapeCommandLine(std::wstring str)
+inline std::string escapeCommandLine(std::string str)
 {
-	if (std::wstring::npos == str.find_first_of(L" \"")) {
+	if (std::string::npos == str.find_first_of(" \"")) {
 		return str;
 	}
 
 	size_t quoteCount = count(begin(str), end(str), L'\"');
 
-	std::wstring q;
+	std::string q;
 	q.reserve(2 + str.size() + (quoteCount * 3));
 
 	q += L'\"';
@@ -53,7 +53,7 @@ inline std::wstring escapeCommandLine(std::wstring str)
 		q.push_back(c);
 		if (c == L'\"') {
 			// triple quotes should work even outside of another quoted field
-			q += L"\"\"\"";
+			q += "\"\"\"";
 		}
 	}
 
@@ -62,13 +62,13 @@ inline std::wstring escapeCommandLine(std::wstring str)
 	return q;
 }
 
-std::wstring makeCommandLineDiff(std::wstring cmdLineA, std::wstring cmdLineB)
+std::string makeCommandLineDiff(std::string cmdLineA, std::string cmdLineB)
 {
-	auto extractArgs = [](std::wstring str) {
-		std::vector<std::wstring> args;
+	auto extractArgs = [](std::string str) {
+		std::vector<std::string> args;
 
 		int argc = 0;
-		wchar_t** argv = ::CommandLineToArgvW(str.c_str(), &argc);
+		char** argv = ::CommandLineToArgvW(str.c_str(), &argc);
 
 		args.reserve(argc);
 
@@ -84,16 +84,16 @@ std::wstring makeCommandLineDiff(std::wstring cmdLineA, std::wstring cmdLineB)
 	auto argsA = extractArgs(cmdLineA);
 	auto argsB = extractArgs(cmdLineB);
 
-	std::wstring result;
-	std::wstring postResult;
+	std::string result;
+	std::string postResult;
 
 	auto itA = argsA.begin();
 	auto itB = argsB.begin();
 
 	while (itA < argsA.end() || itB < argsB.end()) {
 
-		std::wstring a;
-		std::wstring b;
+		std::string a;
+		std::string b;
 
 		if (itA < argsA.end()) {
 			a = *itA;
@@ -106,7 +106,7 @@ std::wstring makeCommandLineDiff(std::wstring cmdLineA, std::wstring cmdLineB)
 		if (iequals(a, b)) {
 			++itA;
 			++itB;
-			//result += L".";
+			//result += ".";
 			continue;
 		}
 		else {
@@ -126,13 +126,13 @@ std::wstring makeCommandLineDiff(std::wstring cmdLineA, std::wstring cmdLineB)
 
 	while (itA_end >= itA && itB_end >= itB) {
 
-		std::wstring a = *itA_end;
-		std::wstring b = *itB_end;
+		std::string a = *itA_end;
+		std::string b = *itB_end;
 
 		if (iequals(a, b)) {
 			--itA_end;
 			--itB_end;
-			//postResult += L".";
+			//postResult += ".";
 			continue;
 		}
 		else {
@@ -140,56 +140,56 @@ std::wstring makeCommandLineDiff(std::wstring cmdLineA, std::wstring cmdLineB)
 		}
 	}
 
-	result += L"(`";
+	result += "(`";
 	while (itA <= itA_end) {
 		result += *itA;
 		if (itA < itA_end) {
-			result += L" ";
+			result += " ";
 		}
 		++itA;
 	}
-	result += L"`, `";
+	result += "`, `";
 	while (itB <= itB_end) {
 		result += *itB;
 		if (itB < itB_end) {
-			result += L" ";
+			result += " ";
 		}
 		++itB;
 	}
-	result += L"`)";
+	result += "`)";
 
 	result += postResult;
 
 	return result;
 }
 
-params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
+params ParseSqlParams(int argc, const char* argv[], bool quiet)
 {
 	params p;
 
-	auto invalidArgs = [&](const wchar_t* msg, const wchar_t* arg = nullptr, HRESULT hr = E_INVALIDARG)
+	auto invalidArgs = [&](const char* msg, const char* arg = nullptr, HRESULT hr = E_INVALIDARG)
 	{
 		if (!quiet) {
-			std::wcerr << msg;
+			std::cerr << msg;
 
 			if (arg && *arg) {
-				std::wcerr << L" `" << arg << L"`";
+				std::cerr << " `" << arg << "`";
 			}
 
-			std::wcerr << std::endl;
+			std::cerr << std::endl;
 
 			showUsage();
 		}
 
 		if (msg && *msg) {
 			if (!p.errorMessage.empty()) {
-				p.errorMessage += L"\r\n";
+				p.errorMessage += "\r\n";
 			}
 			p.errorMessage += msg;
 			if (arg && *arg) {
-				p.errorMessage += L" `";
+				p.errorMessage += " `";
 				p.errorMessage += arg;
-				p.errorMessage += L"`";
+				p.errorMessage += "`";
 			}
 		}
 
@@ -212,12 +212,12 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 
 	p.device = make_guid();
 
-	wchar_t** arg = argv;
-	wchar_t** argEnd = arg + argc;
-	wchar_t** argFirst = arg + 1;
+	const char** arg = argv;
+	const char** argEnd = arg + argc;
+	const char** argFirst = arg + 1;
 
-	wchar_t** argVerb = nullptr;
-	wchar_t** argVerbEnd = nullptr;
+	const char** argVerb = nullptr;
+	const char** argVerbEnd = nullptr;
 
 	++arg;
 
@@ -227,27 +227,27 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 	{
 		while (arg < argEnd) {
 			auto sz = *arg;
-			if (iequals(sz, L"backup")) {
+			if (iequals(sz, "backup")) {
 				argVerb = arg++;
 				p.command = ToLower(sz);
-				if (arg < argEnd && iequals(*arg, L"database")) {
+				if (arg < argEnd && iequals(*arg, "database")) {
 					++arg;
 				}
 				break;
 			}
-			else if (iequals(sz, L"restore")) {
+			else if (iequals(sz, "restore")) {
 				argVerb = arg++;
 				p.command = ToLower(sz);
-				if (arg < argEnd && iequals(*arg, L"database")) {
+				if (arg < argEnd && iequals(*arg, "database")) {
 					++arg;
 				}
-				if (arg < argEnd && iequals(*arg, L"filelistonly")) {
+				if (arg < argEnd && iequals(*arg, "filelistonly")) {
 					p.subcommand = ToLower(*arg);
 					++arg;
 				}
 				break;
 			}
-			else if (iequals(sz, L"pipe")) {
+			else if (iequals(sz, "pipe")) {
 				argVerb = arg++;
 				p.command = ToLower(sz);
 				break;
@@ -262,7 +262,7 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 	// if argVerb is null, we are doomed
 
 	if (!argVerb) {
-		return invalidArgs(L"missing verb");
+		return invalidArgs("missing verb");
 	}
 
 	// so now we have two ranges: 
@@ -273,12 +273,12 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 		arg = argFirst;
 
 		// first is instance
-		if (arg < argVerb && !iequals(*arg, L"as")) {
+		if (arg < argVerb && !iequals(*arg, "as")) {
 			p.instance = *arg;
 			++arg;
 		}
 		if (arg < argVerb) {
-			if (iequals(*arg, L"as")) {
+			if (iequals(*arg, "as")) {
 				++arg;
 				if (arg < argVerb) {
 					p.as = *arg;
@@ -286,7 +286,7 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 
 					// parse creds into username and password
 					size_t split = p.as.find(L':');
-					if (split == std::wstring::npos) {
+					if (split == std::string::npos) {
 						p.username = p.as;
 					}
 					else {
@@ -295,18 +295,18 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 					}
 				}
 				else {
-					return invalidArgs(L"invalid authentication");
+					return invalidArgs("invalid authentication");
 				}
 			}
 		}
 
 		if (arg < argVerb) {
-			return invalidArgs(L"invalid instance or authentication");
+			return invalidArgs("invalid instance or authentication");
 		}
 
 		while (arg < argVerb) {
 			auto sz = *arg;
-			if (iequals(sz, L"as")) {
+			if (iequals(sz, "as")) {
 			}
 			else {
 				p.instance = sz;
@@ -322,46 +322,46 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 
 	if (p.isPipe()) {
 		if (arg >= argEnd) {
-			return invalidArgs(L"arguments missing");
+			return invalidArgs("arguments missing");
 		}
 
 		// pipe can have either to or from followed by device name
 
-		if (arg < argEnd && iequals(*arg, L"to")) {
+		if (arg < argEnd && iequals(*arg, "to")) {
 			p.subcommand = ToLower(*arg);
 		}
-		else if (arg < argEnd && iequals(*arg, L"from")) {
+		else if (arg < argEnd && iequals(*arg, "from")) {
 			p.subcommand = ToLower(*arg);
 		}
 		else {
-			return invalidArgs(L"pipe requires `to` or `from` and a device name");
+			return invalidArgs("pipe requires `to` or `from` and a device name");
 		}
 
 		++arg;
 
 		if (arg >= argEnd) {
-			return invalidArgs(L"pipe requires a device name");
+			return invalidArgs("pipe requires a device name");
 		}
 
 		p.device = *arg;
 
 		++arg;
 
-		if (arg < argEnd && p.subcommand == L"from" && iequals(*arg, L"to")) {
+		if (arg < argEnd && p.subcommand == "from" && iequals(*arg, "to")) {
 			++arg;
 
 			if (arg >= argEnd) {
-				return invalidArgs(L"missing file name");
+				return invalidArgs("missing file name");
 			}
 
 			p.to = *arg;
 			++arg;
 		}
-		else if (arg < argEnd && p.subcommand == L"to" && iequals(*arg, L"from")) {
+		else if (arg < argEnd && p.subcommand == "to" && iequals(*arg, "from")) {
 			++arg;
 
 			if (arg >= argEnd) {
-				return invalidArgs(L"missing file name");
+				return invalidArgs("missing file name");
 			}
 
 			p.from = *arg;
@@ -369,17 +369,17 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 		}
 
 		if (arg < argEnd) {
-			return invalidArgs(L"extra args at end");
+			return invalidArgs("extra args at end");
 		}
 	}
-	else if (p.isRestore() && p.subcommand == L"filelistonly") {
+	else if (p.isRestore() && p.subcommand == "filelistonly") {
 		// filelistonly 
 
-		if (arg < argEnd && iequals(*arg, L"from")) {
+		if (arg < argEnd && iequals(*arg, "from")) {
 			++arg;
 
 			if (arg >= argEnd) {
-				return invalidArgs(L"missing file name");
+				return invalidArgs("missing file name");
 			}
 
 			p.from = *arg;
@@ -387,7 +387,7 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 		}
 
 		if (arg < argEnd) {
-			return invalidArgs(L"extra args at end");
+			return invalidArgs("extra args at end");
 		}
 	}
 	else if (p.isBackupOrRestore()) {
@@ -401,11 +401,11 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 		if (p.isBackup()) {
 
 			// to file
-			if (arg < argEnd && iequals(*arg, L"to")) {
+			if (arg < argEnd && iequals(*arg, "to")) {
 				++arg;
 
 				if (arg >= argEnd) {
-					return invalidArgs(L"missing file name");
+					return invalidArgs("missing file name");
 				}
 
 				p.to = *arg;
@@ -414,31 +414,31 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 
 			// TODO with copy only, not copy only, etc?
 
-			if (arg < argEnd && iequals(*arg, L"with")) {
+			if (arg < argEnd && iequals(*arg, "with")) {
 				++arg;
 
 				if (arg >= argEnd) {
-					return invalidArgs(L"missing option after with");
+					return invalidArgs("missing option after with");
 				}
 
 				// no with options for backup yet
 
-				return invalidArgs(L"invalid with option");
+				return invalidArgs("invalid with option");
 			}
 
 			if (arg < argEnd) {
-				return invalidArgs(L"extra args at end");
+				return invalidArgs("extra args at end");
 			}
 
 		}
 		else if (p.isRestore()) {
 
 			// from file
-			if (arg < argEnd && iequals(*arg, L"from")) {
+			if (arg < argEnd && iequals(*arg, "from")) {
 				++arg;
 
 				if (arg >= argEnd) {
-					return invalidArgs(L"missing file name");
+					return invalidArgs("missing file name");
 				}
 
 				p.from = *arg;
@@ -446,11 +446,11 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 			}
 
 			// to path
-			if (arg < argEnd && iequals(*arg, L"to")) {
+			if (arg < argEnd && iequals(*arg, "to")) {
 				++arg;
 
 				if (arg >= argEnd) {
-					return invalidArgs(L"missing restore path");
+					return invalidArgs("missing restore path");
 				}
 
 				p.to = *arg;
@@ -459,47 +459,47 @@ params ParseSqlParams(int argc, wchar_t* argv[], bool quiet)
 
 			// with replace
 
-			if (arg < argEnd && iequals(*arg, L"with")) {
+			if (arg < argEnd && iequals(*arg, "with")) {
 				++arg;
 
 				if (arg >= argEnd) {
-					return invalidArgs(L"missing option after with");
+					return invalidArgs("missing option after with");
 				}
 
-				if (iequals(*arg, L"replace")) {
+				if (iequals(*arg, "replace")) {
 					p.subcommand = ToLower(*arg);
 					++arg;
 				}
 				else {
-					return invalidArgs(L"invalid with option");
+					return invalidArgs("invalid with option");
 				}
 			}
 		}
 		else {
-			return invalidArgs(L"something horrible");
+			return invalidArgs("something horrible");
 		}
 	}
 
 	return p;
 }
 
-params ParseParams(int argc, wchar_t* argv[], bool quiet)
+params ParseParams(int argc, const char* argv[], bool quiet)
 {
 	// exclude all --special flags
 
 	paramflags flags;
-	std::vector<wchar_t*> args;
+	std::vector<const char*> args;
 	args.reserve(argc);
 
 	args.push_back(argv[0]);
 	for (int i = 1; i < argc; ++i) {
-		wchar_t* arg = argv[i];
+		const char* arg = argv[i];
 		if (arg && arg[0] && arg[1] && arg[0] == L'-' && arg[1] == L'-') {
-			if (iequals(arg, L"--noelevate")) {
+			if (iequals(arg, "--noelevate")) {
 				flags.noelevate = true;
-			} else if (iequals(arg, L"--test")) {
+			} else if (iequals(arg, "--test")) {
 				flags.test = true;
-			} else if (iequals(arg, L"--tee")) {
+			} else if (iequals(arg, "--tee")) {
 				++i;
 				if (i < argc) {
 					flags.tee = argv[i];
@@ -512,38 +512,38 @@ params ParseParams(int argc, wchar_t* argv[], bool quiet)
 		}		
 	}
 
-	params p = ParseSqlParams(static_cast<int>(args.size()), static_cast<wchar_t**>(&args[0]), quiet);
+	params p = ParseSqlParams(static_cast<int>(args.size()), static_cast<const char**>(&args[0]), quiet);
 
 	p.flags = flags;
 	
 	return p;
 }
 
-std::wstring MakeParams(const params& p)
+std::string MakeParams(const params& p)
 {
-	std::wstring commandLine;
+	std::string commandLine;
 	commandLine.reserve(260);
 
-	auto append = [&commandLine](std::wstring str) {
+	auto append = [&commandLine](std::string str) {
 		if (str.empty()) {
 			return;
 		}
 
 		if (!commandLine.empty()) {
-			commandLine += L" ";
+			commandLine += " ";
 		}
 
 		commandLine += escapeCommandLine(str);
 	};
 
 	if (p.flags.noelevate) {
-		append(L"--noelevate");
+		append("--noelevate");
 	}
 	if (p.flags.test) {
-		append(L"--test");
+		append("--test");
 	}
 	if (!p.flags.tee.empty()) {
-		append(L"--tee");
+		append("--tee");
 		append(p.flags.tee);
 	}
 
@@ -551,18 +551,18 @@ std::wstring MakeParams(const params& p)
 		append(p.instance);
 	}
 	if (!p.as.empty()) {
-		append(L"as");
+		append("as");
 		append(p.as);
 	}
 
 	assert(!p.command.empty());
 
 	append(p.command);
-	if (p.isRestore() && p.subcommand == L"filelistonly") {
+	if (p.isRestore() && p.subcommand == "filelistonly") {
 		append(p.subcommand);
 
 		if (!p.from.empty()) {
-			append(L"from");
+			append("from");
 			append(p.from);
 		}
 	}
@@ -579,11 +579,11 @@ std::wstring MakeParams(const params& p)
 		assert((p.to.empty() && p.from.empty()) || (p.to.empty() && !p.from.empty()) || (p.from.empty() && !p.to.empty()));
 
 		if (!p.to.empty()) {
-			append(L"to");
+			append("to");
 			append(p.to);
 		}
 		if (!p.from.empty()) {
-			append(L"from");
+			append("from");
 			append(p.from);
 		}
 	}
@@ -594,7 +594,7 @@ std::wstring MakeParams(const params& p)
 		append(p.database);
 
 		if (!p.to.empty()) {
-			append(L"to");
+			append("to");
 			append(p.to);
 		}
 
@@ -607,17 +607,17 @@ std::wstring MakeParams(const params& p)
 		append(p.database);
 
 		if (!p.from.empty()) {
-			append(L"from");
+			append("from");
 			append(p.from);
 		}
 
 		if (!p.to.empty()) {
-			append(L"to");
+			append("to");
 			append(p.to);
 		}
 
-		if (p.subcommand == L"replace") {
-			append(L"with");
+		if (p.subcommand == "replace") {
+			append("with");
 			append(p.subcommand);
 		}
 	}
@@ -627,52 +627,52 @@ std::wstring MakeParams(const params& p)
 
 std::wostream& operator<<(std::wostream& o, const params& p)
 {
-	o << L"(";
+	o << "(";
 	if (S_OK != p.hr) {
-		o << L"hr=" << p.hr << L";";
+		o << "hr=" << p.hr << ";";
 	}
 	if (!p.instance.empty()) {
-		o << L"instance=" << p.instance << L";";
+		o << "instance=" << p.instance << ";";
 	}
 	if (!p.command.empty()) {
-		o << L"command=" << p.command << L";";
+		o << "command=" << p.command << ";";
 	}
 	if (!p.subcommand.empty()) {
-		o << L"subcommand=" << p.subcommand << L";";
+		o << "subcommand=" << p.subcommand << ";";
 	}
 	if (!p.database.empty()) {
-		o << L"database=" << p.database << L";";
+		o << "database=" << p.database << ";";
 	}
 	if (!p.from.empty()) {
-		o << L"from=" << p.from << L";";
+		o << "from=" << p.from << ";";
 	}
 	if (!p.to.empty()) {
-		o << L"to=" << p.to << L";";
+		o << "to=" << p.to << ";";
 	}
 	if (!p.as.empty()) {
-		o << L"as=" << p.as << L";";
+		o << "as=" << p.as << ";";
 	}
 	if (!p.username.empty()) {
-		o << L"username=" << p.username << L";";
+		o << "username=" << p.username << ";";
 	}
 	if (!p.password.empty()) {
-		o << L"password=" << p.password << L";";
+		o << "password=" << p.password << ";";
 	}
 
 	if (p.isPipe()) {
-		o << L"device=" << p.device << L";";
+		o << "device=" << p.device << ";";
 	}
 
-	o << L")";
+	o << ")";
 	return o;
 }
 
 #ifdef _DEBUG
 bool TestParseParams()
 {
-	auto test = [](const wchar_t* cmdLine) {
+	auto test = [](const char* cmdLine) {
 		int argc = 0;
-		wchar_t** argv = ::CommandLineToArgvW(cmdLine, &argc);
+		char** argv = ::CommandLineToArgvW(cmdLine, &argc);
 
 		if (!argv) {
 			return false;
@@ -682,10 +682,10 @@ bool TestParseParams()
 
 		::LocalFree(argv);
 
-		auto rebuilt = L"mssqlPipe " + MakeParams(p);
+		auto rebuilt = "mssqlPipe " + MakeParams(p);
 
 		bool succeeded = SUCCEEDED(p.hr);
-		bool matches = iequals(cmdLine, rebuilt) || iequals(L"(`database`, ``)", makeCommandLineDiff(cmdLine, rebuilt));
+		bool matches = iequals(cmdLine, rebuilt) || iequals("(`database`, ``)", makeCommandLineDiff(cmdLine, rebuilt));
 
 		argc = 0;
 		argv = ::CommandLineToArgvW(rebuilt.c_str(), &argc);
@@ -698,28 +698,28 @@ bool TestParseParams()
 
 		::LocalFree(argv);
 
-		auto p_rebuilt_rebuilt = L"mssqlPipe " + MakeParams(p_rebuilt);
+		auto p_rebuilt_rebuilt = "mssqlPipe " + MakeParams(p_rebuilt);
 
 		bool rebuilt_matches = iequals(rebuilt, p_rebuilt_rebuilt);
 
 		if (!succeeded || !matches || !rebuilt_matches) {
 			if (!succeeded) {
-				std::wcerr << L"FAILED! " << p.errorMessage << L" (0x" << std::hex << p.hr << std::dec << L")" << std::endl;
+				std::cerr << "FAILED! " << p.errorMessage << " (0x" << std::hex << p.hr << std::dec << ")" << std::endl;
 			}
 			if (!matches) {
-				std::wcerr << L"MISMATCH! " << makeCommandLineDiff(cmdLine, rebuilt) << std::endl;
+				std::cerr << "MISMATCH! " << makeCommandLineDiff(cmdLine, rebuilt) << std::endl;
 			}
 			if (!rebuilt_matches) {
-				std::wcerr << L"REBUILT MISMATCH! " << makeCommandLineDiff(rebuilt, p_rebuilt_rebuilt) << std::endl;
+				std::cerr << "REBUILT MISMATCH! " << makeCommandLineDiff(rebuilt, p_rebuilt_rebuilt) << std::endl;
 			}
-			std::wcerr << L">\t`" << cmdLine << L"`" << std::endl;
-			std::wcerr << L"<\t`" << rebuilt << L"`" << std::endl;
-			std::wcerr << L"=\t" << p << std::endl;
+			std::cerr << ">\t`" << cmdLine << "`" << std::endl;
+			std::cerr << "<\t`" << rebuilt << "`" << std::endl;
+			std::cerr << "=\t" << p << std::endl;
 			if (!rebuilt_matches) {
-				std::wcerr << L"*<\t`" << p_rebuilt_rebuilt << L"`" << std::endl;
-				std::wcerr << L"*=\t" << p_rebuilt << std::endl;
+				std::cerr << "*<\t`" << p_rebuilt_rebuilt << "`" << std::endl;
+				std::cerr << "*=\t" << p_rebuilt << std::endl;
 			}
-			std::wcerr << std::endl;
+			std::cerr << std::endl;
 			return false;
 		}
 
@@ -727,31 +727,31 @@ bool TestParseParams()
 	};
 
 	// arguments before verb
-	if (!test(L"mssqlPipe backup AdventureWorks")) { return false; }
-	if (!test(L"mssqlPipe myinstance backup AdventureWorks")) { return false; }
-	if (!test(L"mssqlPipe myinstance as sa:hunter2 backup AdventureWorks")) { return false; }
+	if (!test("mssqlPipe backup AdventureWorks")) { return false; }
+	if (!test("mssqlPipe myinstance backup AdventureWorks")) { return false; }
+	if (!test("mssqlPipe myinstance as sa:hunter2 backup AdventureWorks")) { return false; }
 
 	// backup
-	if (!test(L"mssqlPipe backup AdventureWorks")) { return false; }
-	if (!test(L"mssqlPipe backup database AdventureWorks")) { return false; }
-	if (!test(L"mssqlPipe backup AdventureWorks to z:/db")) { return false; }
+	if (!test("mssqlPipe backup AdventureWorks")) { return false; }
+	if (!test("mssqlPipe backup database AdventureWorks")) { return false; }
+	if (!test("mssqlPipe backup AdventureWorks to z:/db")) { return false; }
 
 	// restore
-	if (!test(L"mssqlPipe restore AdventureWorks")) { return false; }
-	if (!test(L"mssqlPipe restore database AdventureWorks")) { return false; }
-	if (!test(L"mssqlPipe restore AdventureWorks from z:/db/AdventureWorks.bak")) { return false; }
-	if (!test(L"mssqlPipe restore AdventureWorks with replace")) { return false; }
-	if (!test(L"mssqlPipe restore AdventureWorks from z:/db/AdventureWorks.bak with replace")) { return false; }
+	if (!test("mssqlPipe restore AdventureWorks")) { return false; }
+	if (!test("mssqlPipe restore database AdventureWorks")) { return false; }
+	if (!test("mssqlPipe restore AdventureWorks from z:/db/AdventureWorks.bak")) { return false; }
+	if (!test("mssqlPipe restore AdventureWorks with replace")) { return false; }
+	if (!test("mssqlPipe restore AdventureWorks from z:/db/AdventureWorks.bak with replace")) { return false; }
 
 	// restore filelistonly
-	if (!test(L"mssqlPipe restore filelistonly")) { return false; }
-	if (!test(L"mssqlPipe restore filelistonly from z:/db/AdventureWorks.bak")) { return false; }
+	if (!test("mssqlPipe restore filelistonly")) { return false; }
+	if (!test("mssqlPipe restore filelistonly from z:/db/AdventureWorks.bak")) { return false; }
 
 	// pipe
-	if (!test(L"mssqlPipe pipe to VirtualDevice")) { return false; }
-	if (!test(L"mssqlPipe pipe from VirtualDevice")) { return false; }
-	if (!test(L"mssqlPipe pipe to VirtualDevice from AdventureWorks.bak")) { return false; }
-	if (!test(L"mssqlPipe pipe from VirtualDevice to AdventureWorks.bak")) { return false; }
+	if (!test("mssqlPipe pipe to VirtualDevice")) { return false; }
+	if (!test("mssqlPipe pipe from VirtualDevice")) { return false; }
+	if (!test("mssqlPipe pipe to VirtualDevice from AdventureWorks.bak")) { return false; }
+	if (!test("mssqlPipe pipe from VirtualDevice to AdventureWorks.bak")) { return false; }
 
 	return true;
 }

@@ -48,7 +48,7 @@ struct pipestat
 
 		ticksLastStatus = tick;
 
-		display(L"Processing... ");
+		display("Processing... ");
 	}
 
 	void finalize()
@@ -59,10 +59,10 @@ struct pipestat
 
 		ticksLastStatus = ::GetTickCount();
 
-		display(L"Total ");
+		display("Total ");
 	}
 
-	void display(wchar_t* prefix)
+	void display(const char* prefix)
 	{
 		DWORD ticksTotal = ticksLastStatus - ticksBegin;
 		
@@ -76,14 +76,14 @@ struct pipestat
 		std::unique_lock<std::mutex> lock(outputMutex);
 
 		if (totalSeconds <= 1.0) {
-			std::wcerr << prefix << std::setw(9) << static_cast<int>(totalKilobytes)
-				<< L" kb in " << L" < 1 second"
+			std::cerr << prefix << std::setw(9) << static_cast<int>(totalKilobytes)
+				<< " kb in " << " < 1 second"
 				<< std::endl;
 		}
 		else {
-			std::wcerr << prefix << std::setw(9) << static_cast<int>(totalKilobytes)
-				<< L" kb in " << std::setw(4) << static_cast<int>(totalSeconds) << L" seconds ("
-				<< std::setw(6) << static_cast<int>(kilobytesPerSec) << L" kb/sec)"
+			std::cerr << prefix << std::setw(9) << static_cast<int>(totalKilobytes)
+				<< " kb in " << std::setw(4) << static_cast<int>(totalSeconds) << " seconds ("
+				<< std::setw(6) << static_cast<int>(kilobytesPerSec) << " kb/sec)"
 				<< std::endl;
 		}
 	}

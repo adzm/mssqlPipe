@@ -10,25 +10,25 @@ struct paramflags
 {
 	bool noelevate = false;
 	bool test = false;
-	std::wstring tee;
+	std::string tee;
 };
 
 struct params
 {
-	std::wstring instance;
-	std::wstring command;
-	std::wstring subcommand;
-	std::wstring database;
-	std::wstring device;
-	std::wstring from;
-	std::wstring to;
+	std::string instance;
+	std::string command;
+	std::string subcommand;
+	std::string database;
+	std::string device;
+	std::string from;
+	std::string to;
 
-	std::wstring as;
-	std::wstring username;
-	std::wstring password;
+	std::string as;
+	std::string username;
+	std::string password;
 
 	HRESULT hr = S_OK;
-	std::wstring errorMessage;
+	std::string errorMessage;
 
 	paramflags flags;
 
@@ -38,12 +38,12 @@ struct params
 
 	bool isRestore() const
 	{
-		return iequals(command, L"restore");
+		return iequals(command, "restore");
 	}
 
 	bool isBackup() const
 	{
-		return iequals(command, L"backup");
+		return iequals(command, "backup");
 	}
 
 	bool isBackupOrRestore() const
@@ -53,7 +53,7 @@ struct params
 
 	bool isPipe() const
 	{
-		return iequals(command, L"pipe");
+		return iequals(command, "pipe");
 	}
 };
 
@@ -62,5 +62,5 @@ struct params
 bool TestParseParams();
 #endif
 
-params ParseParams(int argc, wchar_t* argv[], bool quiet);
-std::wstring MakeParams(const params& p);
+params ParseParams(int argc, const char* argv[], bool quiet);
+std::string MakeParams(const params& p);

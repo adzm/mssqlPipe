@@ -3,26 +3,155 @@
 #include <string>
 #include <algorithm>
 
+inline std::wstring widen(const char* sz, size_t length)
+{
+	if (0 == length) {
+		return{};
+	}
 
-inline std::wstring ToLower(std::wstring str)
+	int ret = ::MultiByteToWideChar(
+		CP_UTF8
+		, 0 // MB_ERR_INVALID_CHARS
+		, sz
+		, length
+		, (wchar_t*)nullptr
+		, 0
+	);
+
+	DWORD err = ::GetLastError();
+
+	assert(0 != ret);
+
+	if (0 == ret) {
+		// error
+		return{};
+	}
+
+	// can succeed but still GetLastError = ERROR_NO_UNICODE_TRANSLATION
+
+	// ret is the required length of the buffer; not including null
+	size_t buflen = ret;
+
+	std::wstring str(buflen, L'\0');
+
+	ret = ::MultiByteToWideChar(
+		CP_UTF8
+		, 0 // MB_ERR_INVALID_CHARS
+		, sz
+		, length
+		, (wchar_t*)&str[0]
+		, str.size()
+	);
+
+	assert(ret == buflen);
+
+	assert(0 != ret);
+
+	if (0 == ret) {
+		// error
+		return{};
+	}
+
+	return str;
+}
+
+inline std::string narrow(const wchar_t* sz, size_t length)
+{
+	if (0 == length) {
+		return{};
+	}
+
+	int ret = ::WideCharToMultiByte(
+		CP_UTF8
+		, WC_NO_BEST_FIT_CHARS | WC_COMPOSITECHECK | WC_DEFAULTCHAR // WC_ERR_INVALID_CHARS
+		, sz
+		, length
+		, (char*)nullptr
+		, 0
+		, nullptr
+		, nullptr
+	);
+
+	DWORD err = ::GetLastError();
+
+	assert(0 != ret);
+
+	if (0 == ret) {
+		// error
+		return{};
+	}
+
+	// can succeed but still GetLastError = ERROR_NO_UNICODE_TRANSLATION
+
+	// ret is the required length of the buffer; not including null
+	size_t buflen = ret;
+	
+	std::string str(buflen, '\0');
+
+	ret = ::WideCharToMultiByte(
+		CP_UTF8
+		, WC_NO_BEST_FIT_CHARS | WC_COMPOSITECHECK | WC_DEFAULTCHAR
+		, sz
+		, length
+		, (char*)&str[0]
+		, str.size()
+		, nullptr
+		, nullptr
+	);
+
+	assert(ret == buflen);
+	
+	assert(0 != ret);
+
+	if (0 == ret) {
+		// error
+		return{};
+	}
+
+	return str;
+}
+
+
+inline std::wstring widen(const std::string& str)
+{
+	return widen(str.c_str(), str.size());
+}
+
+inline std::wstring widen(const char* sz)
+{
+	return widen(sz, strlen(sz));
+}
+
+inline std::string narrow(const std::wstring& str)
+{
+	return narrow(str.c_str(), str.size());
+}
+
+inline std::string narrow(const wchar_t* sz)
+{
+	return narrow(sz, strlen(sz));
+}
+
+
+inline std::string ToLower(std::string str)
 {
 	std::transform(str.begin(), str.end(), str.begin(), towlower);
 	return str;
 }
 
-inline int icmp(const std::wstring& a, const std::wstring& b)
+inline int icmp(const std::string& a, const std::string& b)
 {
 	return _wcsicmp(a.c_str(), b.c_str());
 }
-inline int icmp(const wchar_t* a, const std::wstring& b)
+inline int icmp(const char* a, const std::string& b)
 {
 	return _wcsicmp(a, b.c_str());
 }
-inline int icmp(const std::wstring& a, const wchar_t* b)
+inline int icmp(const std::string& a, const char* b)
 {
 	return _wcsicmp(a.c_str(), b);
 }
-inline int icmp(const wchar_t* a, const wchar_t* b)
+inline int icmp(const char* a, const char* b)
 {
 	return _wcsicmp(a, b);
 }
@@ -44,7 +173,7 @@ struct iless_predicate
 
 inline std::wostream& operator<<(std::wostream& o, const _bstr_t& bstr)
 {
-	const wchar_t* str = (const wchar_t*)bstr;
+	const char* str = (const char*)bstr;
 	if (str) {
 		return o << str;
 	}
@@ -66,7 +195,7 @@ inline std::ostream& operator<<(std::ostream& o, const _bstr_t& bstr)
 
 /****/
 
-inline std::wstring escape(std::wstring str)
+inline std::string escape(std::string str)
 {
 	size_t quoteCount = count(begin(str), end(str), L'\'');
 
@@ -74,7 +203,7 @@ inline std::wstring escape(std::wstring str)
 		return str;
 	}
 
-	std::wstring q;
+	std::string q;
 	q.reserve(str.size() + quoteCount);
 
 	for (auto c : str) {
@@ -90,9 +219,9 @@ inline std::wstring escape(std::wstring str)
 
 /****/
 
-inline std::wstring make_guid()
+inline std::string make_guid()
 {
-	std::wstring guid;
+	std::string guid;
 	GUID guidRaw = { 0 };
 	::CoCreateGuid(&guidRaw);
 	guid.resize(38);
@@ -208,7 +337,7 @@ private:
 };
 
 typedef basic_teebuf<char> teebuf;
-typedef basic_teebuf<wchar_t> wteebuf;
+typedef basic_teebuf<char> wteebuf;
 
 template <typename char_type,
 	typename traits = std::char_traits<char_type> >
@@ -226,6 +355,6 @@ protected:
 };
 
 typedef basic_teestream<char> teestream;
-typedef basic_teestream<wchar_t> wteestream;
+typedef basic_teestream<char> wteestream;
 
 /****/
