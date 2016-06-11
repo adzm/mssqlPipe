@@ -683,7 +683,7 @@ struct DbFile
 	std::wstring type;
 };
 
-HRESULT RunPrepareRestoreDatabase(params p, InputFile& inputFile, std::wstring& dataPath, std::wstring& logPath, std::vector<DbFile>& fileList, bool quiet)
+HRESULT RunPrepareRestoreDatabase(VirtualDevice& vd, params p, InputFile& inputFile, std::wstring& dataPath, std::wstring& logPath, std::vector<DbFile>& fileList, bool quiet)
 {
 	HRESULT hr = 0;
 
@@ -694,12 +694,6 @@ HRESULT RunPrepareRestoreDatabase(params p, InputFile& inputFile, std::wstring& 
 		std::wostringstream o;
 		o << L"restore filelistonly from virtual_device=N'" << escape(p.device) << L"';";
 		sql = o.str();
-	}
-
-	VirtualDevice vd(p.instance, p.device);
-	hr = vd.Create();
-	if (!SUCCEEDED(hr)) {
-		return hr;
 	}
 
 	auto pipeResult = std::async([&vd, &inputFile, &p, quiet]{
@@ -835,7 +829,7 @@ select
 	return hr;
 }
 
-HRESULT RunRestoreDatabase(params p, std::wstring sql, InputFile& inputFile, bool quiet)
+HRESULT RunRestoreDatabase(VirtualDevice& vd, params p, std::wstring sql, InputFile& inputFile, bool quiet)
 {
 	HRESULT hr = 0;
 
@@ -845,13 +839,7 @@ HRESULT RunRestoreDatabase(params p, std::wstring sql, InputFile& inputFile, boo
 		std::unique_lock<std::mutex> lock(outputMutex_);
 		std::wcerr << L"Restoring via virtual device " << p.device << std::endl;
 	}
-
-	VirtualDevice vd(p.instance, p.device);
-	hr = vd.Create();
-	if (!SUCCEEDED(hr)) {
-		return hr;
-	}
-
+	
 	auto pipeResult = std::async([&vd, &inputFile, &p, quiet]{
 		CoInit comInit;
 
@@ -976,7 +964,7 @@ std::wstring BuildRestoreCommand(params p, std::wstring dataPath, std::wstring l
 	return o.str();
 }
 
-HRESULT RunRestore(params p, HANDLE hFile)
+HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 {
 	HRESULT hr = S_OK;
 
@@ -987,7 +975,7 @@ HRESULT RunRestore(params p, HANDLE hFile)
 		std::wostringstream o;
 		o << L"restore filelistonly from virtual_device=N'" << escape(p.device) << L"';";
 
-		hr = RunRestoreDatabase(p, o.str(), inputFile, true);
+		hr = RunRestoreDatabase(vd, p, o.str(), inputFile, true);
 	
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
@@ -1006,7 +994,13 @@ HRESULT RunRestore(params p, HANDLE hFile)
 		params altp = p;
 		altp.device = make_guid();
 
-		hr = RunPrepareRestoreDatabase(altp, inputFile, dataPath, logPath, fileList, true);
+		VirtualDevice altvd(altp.instance, altp.device);
+		hr = altvd.Create();
+		if (!SUCCEEDED(hr)) {
+			return hr;
+		}
+
+		hr = RunPrepareRestoreDatabase(altvd, altp, inputFile, dataPath, logPath, fileList, true);
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
 			std::wcerr << L"RunRestoreFileListOnly failed with " << std::hex << hr << std::dec << std::endl;
@@ -1023,7 +1017,7 @@ HRESULT RunRestore(params p, HANDLE hFile)
 	
 	auto sql = BuildRestoreCommand(p, dataPath, logPath, fileList);
 
-	hr = RunRestoreDatabase(p, sql, inputFile, false);
+	hr = RunRestoreDatabase(vd, p, sql, inputFile, false);
 	
 	if (!SUCCEEDED(hr)) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
@@ -1034,7 +1028,7 @@ HRESULT RunRestore(params p, HANDLE hFile)
 	return hr;
 }
 
-HRESULT RunBackup(params p, HANDLE hFile)
+HRESULT RunBackup(VirtualDevice& vd, params p, HANDLE hFile)
 {
 	HRESULT hr = 0;
 
@@ -1051,12 +1045,6 @@ HRESULT RunBackup(params p, HANDLE hFile)
 	{
 		std::unique_lock<std::mutex> lock(outputMutex_);
 		std::wcerr << L"Backing up via virtual device " << p.device << std::endl;
-	}
-
-	VirtualDevice vd(p.instance, p.device);
-	hr = vd.Create();
-	if (!SUCCEEDED(hr)) {
-		return hr;
 	}
 
 	OutputFile outputFile(hFile);
@@ -1124,19 +1112,13 @@ HRESULT RunBackup(params p, HANDLE hFile)
 	return hr;
 }
 
-HRESULT RunPipe(params p, HANDLE hFile)
+HRESULT RunPipe(VirtualDevice& vd, params p, HANDLE hFile)
 {
 	HRESULT hr = 0;
 
 	{
 		std::unique_lock<std::mutex> lock(outputMutex_);
 		std::wcerr << L"Piping " << p.subcommand << L" virtual device " << p.device << std::endl;
-	}
-
-	VirtualDevice vd(p.instance, p.device);
-	hr = vd.Create();
-	if (!SUCCEEDED(hr)) {
-		return hr;
 	}
 
 	// in pipe mode, use a much larger than the default timeout, say 5 minutes
@@ -1247,14 +1229,20 @@ HRESULT Run(params p)
 
 	HRESULT hr = S_OK;
 	
+	VirtualDevice vd(p.instance, p.device);
+	hr = vd.Create();
+	if (!SUCCEEDED(hr)) {
+		return hr;
+	}
+	
 	if (p.isBackup()) {
-		hr = RunBackup(p, hFile);
+		hr = RunBackup(vd, p, hFile);
 	}
 	else if (p.isRestore()) {
-		hr = RunRestore(p, hFile);
+		hr = RunRestore(vd, p, hFile);
 	}
 	else if (p.isPipe()) {
-		hr = RunPipe(p, hFile);
+		hr = RunPipe(vd, p, hFile);
 	}
 	else {		
 		std::wcerr << L"unexpected command " << p.command << std::endl;
