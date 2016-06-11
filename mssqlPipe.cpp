@@ -157,8 +157,8 @@ std::wstring make_guid()
 
 struct InputFile
 {
-	InputFile(FILE* f, size_t buflen)
-		: file(f)
+	InputFile(HANDLE hFile, size_t buflen)
+		: hFile(hFile)
 		, membufReserved(buflen)
 	{
 		if (membufReserved) {			
@@ -189,7 +189,16 @@ struct InputFile
 		if (membuf) {
 			// if first read, fill the buffer
 			if (membufLen == 0 && membufPos == 0 && streamPos == 0 && membufReserved != 0) {
-				size_t bytesRead = fread(membuf.get(), 1, membufReserved, file);
+				DWORD bytesRead = 0;
+
+				while (bytesRead < membufReserved) {
+					DWORD dwBytes = 0;
+					BOOL ret = ::ReadFile(hFile, membuf.get() + bytesRead, membufReserved - bytesRead, &dwBytes, nullptr);
+					bytesRead += dwBytes;
+					if (!ret || (dwBytes == 0)) {
+						break;
+					}
+				}
 
 				streamPos += bytesRead;
 
@@ -215,7 +224,18 @@ struct InputFile
 				membuf.reset();
 			}
 		}
-		DWORD streamRead = fread(buf, 1, len, file);
+
+		DWORD streamRead = 0;
+
+		while (streamRead < len) {
+			DWORD dwBytes = 0;
+			BOOL ret = ::ReadFile(hFile, buf, len, &dwBytes, nullptr);
+			streamRead += dwBytes;
+			if (!ret || (dwBytes == 0)) {
+				break;
+			}
+		}
+
 		streamPos += streamRead;
 		totalRead += streamRead;
 
@@ -223,7 +243,7 @@ struct InputFile
 	}
 
 protected:
-	FILE* file = nullptr;
+	HANDLE hFile = nullptr;
 	std::unique_ptr<BYTE[]> membuf;
 	size_t membufReserved = 0;
 	size_t membufLen = 0;
@@ -233,23 +253,33 @@ protected:
 
 struct OutputFile
 {
-	explicit OutputFile(FILE* f)
-		: file(f)
+	explicit OutputFile(HANDLE hFile)
+		: hFile(hFile)
 	{		
 	}
 
 	DWORD write(void* buf, DWORD len)
 	{
-		return fwrite(buf, 1, len, file);
+		DWORD dwBytesWritten = 0;
+		while (dwBytesWritten < len) {
+			DWORD dwBytes = 0;
+			BOOL ret = ::WriteFile(hFile, static_cast<BYTE*>(buf) + dwBytesWritten, len - dwBytesWritten, &dwBytes, nullptr);
+			dwBytesWritten += dwBytes;
+			if (!ret || (dwBytes == 0)) {
+				break;
+			}
+		}
+		return dwBytesWritten;
 	}
 
 	void flush()
 	{
-		fflush(file);
+		// not necessary with the win32 streams
+		//fflush(file);
 	}
 
 protected:
-	FILE* file = nullptr;
+	HANDLE hFile = nullptr;
 };
 
 ///
@@ -1191,11 +1221,11 @@ std::wstring BuildRestoreCommand(params p, std::wstring dataPath, std::wstring l
 	return o.str();
 }
 
-HRESULT RunRestore(params p, FILE* file)
+HRESULT RunRestore(params p, HANDLE hFile)
 {
 	HRESULT hr = S_OK;
 
-	InputFile inputFile(file, 0x10000);
+	InputFile inputFile(hFile, 0x10000);
 
 	if (iequals(p.subcommand, L"filelistonly")) {
 		
@@ -1249,7 +1279,7 @@ HRESULT RunRestore(params p, FILE* file)
 	return hr;
 }
 
-HRESULT RunBackup(params p, FILE* file)
+HRESULT RunBackup(params p, HANDLE hFile)
 {
 	HRESULT hr = 0;
 
@@ -1274,7 +1304,7 @@ HRESULT RunBackup(params p, FILE* file)
 		return hr;
 	}
 
-	OutputFile outputFile(file);
+	OutputFile outputFile(hFile);
 
 	auto pipeResult = std::async([&vd, &outputFile, &p]{
 		CoInit comInit;
@@ -1339,7 +1369,7 @@ HRESULT RunBackup(params p, FILE* file)
 	return hr;
 }
 
-HRESULT RunPipe(params p, FILE* file)
+HRESULT RunPipe(params p, HANDLE hFile)
 {
 	HRESULT hr = 0;
 
@@ -1358,7 +1388,7 @@ HRESULT RunPipe(params p, FILE* file)
 	DWORD pipeTimeout = 5 * 60 * 1000;
 
 	if (iequals(p.subcommand, L"from")) {
-		OutputFile outputFile(file);
+		OutputFile outputFile(hFile);
 
 		auto pipeResult = std::async([&vd, &outputFile, pipeTimeout]{
 			CoInit comInit;
@@ -1371,7 +1401,7 @@ HRESULT RunPipe(params p, FILE* file)
 	}
 	else if (iequals(p.subcommand, L"to")) {
 
-		InputFile inputFile(file, 0); // no buffering
+		InputFile inputFile(hFile, 0); // no buffering
 
 		auto pipeResult = std::async([&vd, &inputFile, pipeTimeout]{
 			CoInit comInit;
@@ -1388,14 +1418,20 @@ HRESULT RunPipe(params p, FILE* file)
 
 HRESULT Run(params p)
 {
-	FILE* file = nullptr;
+	HANDLE hFile = nullptr;
+
+	HANDLE hStdIn = ::GetStdHandle(STD_INPUT_HANDLE);
+	HANDLE hStdOut = ::GetStdHandle(STD_OUTPUT_HANDLE);
+	HANDLE hStdErr = ::GetStdHandle(STD_ERROR_HANDLE);
+
 	if (p.isBackup()) {
 		if (p.to.empty()) {
-			file = stdout;
+			hFile = hStdOut;
 		}
 		else {
-			int ret = _wfopen_s(&file, p.to.c_str(), L"wb");
-			if (!file) {
+			hFile = ::CreateFile(p.to.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (!hFile || INVALID_HANDLE_VALUE == hFile) {
+				DWORD ret = ::GetLastError();
 				std::wcerr << ret << L": Failed to open " << p.to << std::endl;
 				return E_FAIL;
 			}
@@ -1409,11 +1445,12 @@ HRESULT Run(params p)
 			}
 		}
 		if (p.from.empty()) {
-			file = stdin;
+			hFile = hStdIn;
 		}
 		else {
-			int ret = _wfopen_s(&file, p.from.c_str(), L"rb");
-			if (!file) {
+			hFile = ::CreateFile(p.from.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+			if (!hFile || INVALID_HANDLE_VALUE == hFile) {
+				DWORD ret = ::GetLastError();
 				std::wcerr << ret << L": Failed to open " << p.from << std::endl;
 				return E_FAIL;
 			}
@@ -1422,11 +1459,12 @@ HRESULT Run(params p)
 	else if (p.isPipe()) {
 		if (iequals(p.subcommand, L"to")) {
 			if (p.from.empty()) {
-				file = stdin;
+				hFile = hStdIn;
 			}
 			else {
-				int ret = _wfopen_s(&file, p.from.c_str(), L"rb");
-				if (!file) {
+				hFile = ::CreateFile(p.from.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+				if (!hFile || INVALID_HANDLE_VALUE == hFile) {
+					DWORD ret = ::GetLastError();
 					std::wcerr << ret << L": Failed to open " << p.from << std::endl;
 					return E_FAIL;
 				}
@@ -1434,11 +1472,12 @@ HRESULT Run(params p)
 		}
 		else if (iequals(p.subcommand, L"from")) {
 			if (p.to.empty()) {
-				file = stdout;
+				hFile = hStdOut;
 			}
 			else {
-				int ret = _wfopen_s(&file, p.to.c_str(), L"wb");
-				if (!file) {
+				hFile = ::CreateFile(p.to.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+				if (!hFile || INVALID_HANDLE_VALUE == hFile) {
+					DWORD ret = ::GetLastError();
 					std::wcerr << ret << L": Failed to open " << p.to << std::endl;
 					return E_FAIL;
 				}
@@ -1446,31 +1485,30 @@ HRESULT Run(params p)
 		}
 	}
 
-	if (!file) {
+	if (!hFile) {
 		std::wcerr << L"missing file" << std::endl;
 		return E_FAIL;
 	}
-	
-	_setmode(_fileno(file), _O_BINARY);
 
 	HRESULT hr = S_OK;
 	
 	if (p.isBackup()) {
-		hr = RunBackup(p, file);
+		hr = RunBackup(p, hFile);
 	}
 	else if (p.isRestore()) {
-		hr = RunRestore(p, file);
+		hr = RunRestore(p, hFile);
 	}
 	else if (p.isPipe()) {
-		hr = RunPipe(p, file);
+		hr = RunPipe(p, hFile);
 	}
 	else {		
 		std::wcerr << L"unexpected command " << p.command << std::endl;
-		return E_FAIL;
+		hr = E_FAIL;
 	}
 	
-	if (file != stdout && file != stdin) {
-		fclose(file);
+	if (hFile != hStdOut && hFile != hStdIn && hFile != hStdErr) {
+		::CloseHandle(hFile);
+		hFile = nullptr;
 	}
 
 	return hr;
@@ -1826,7 +1864,6 @@ bool TestParseParams()
 
 int wmain(int argc, wchar_t* argv[])
 {
-
 	CoInit comInit;
 
 #ifdef _DEBUG
