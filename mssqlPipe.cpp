@@ -1326,17 +1326,19 @@ HRESULT Run(params p)
 			std::wcerr << L"Run failed with E_ACCESSDENIED!" << std::endl;
 			std::wcerr << L"Attempting to elevate and redirect io..." << std::endl;
 
+			std::wstring unique = make_guid().substr(1, 8);
+
 			std::wstring namedPipe;
 			{
 				std::wostringstream o;
-				o << LR"(\\.\pipe\mssqlPipe_)" << L"stdio_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << L"_" << p.device.substr(1, 8);
+				o << LR"(\\.\pipe\mssqlPipe_)" << L"stdio_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << L"_" << unique;
 				namedPipe = o.str();
 			}
 
 			std::wstring stderrPipe;
 			{
 				std::wostringstream o;
-				o << LR"(\\.\pipe\mssqlPipe_)" << L"stderr_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << L"_" << p.device.substr(1, 8);
+				o << LR"(\\.\pipe\mssqlPipe_)" << L"stderr_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << L"_" << unique;
 				stderrPipe = o.str();
 			}
 
