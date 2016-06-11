@@ -1153,7 +1153,7 @@ HRESULT RunPipe(VirtualDevice& vd, params p, HANDLE hFile)
 	return hr;
 }	
 
-HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe)
+HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe, std::wstring stderrPipe)
 {
 	if (!hInput && !hOutput) {
 		std::wcerr << L"Invalid command for elevation" << std::endl;
@@ -1170,6 +1170,16 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe)
 		, nullptr
 	);
 
+	HANDLE hStderrPipe = ::CreateNamedPipe(stderrPipe.c_str()
+		, PIPE_ACCESS_INBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE
+		, PIPE_TYPE_BYTE | PIPE_WAIT
+		, 1
+		, 0x4000
+		, 0x4000
+		, 10000
+		, nullptr
+	);
+
 	// launch
 	HANDLE hProcess = nullptr;
 	{
@@ -1179,7 +1189,7 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe)
 		wchar_t thisModuleFileName[MAX_PATH];
 		::GetModuleFileName(nullptr, thisModuleFileName, _countof(thisModuleFileName));
 
-		sei.fMask = 0 | SEE_MASK_NOCLOSEPROCESS;
+		sei.fMask = 0 | SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
 		sei.hwnd = NULL;
 		sei.lpVerb = L"runas";
 		sei.lpFile = thisModuleFileName;
@@ -1192,6 +1202,7 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe)
 		if ((int)sei.hInstApp <= 32) {
 			::CloseHandle(sei.hProcess);
 			::CloseHandle(hPipe);
+			::CloseHandle(hStderrPipe);
 			return E_FAIL;
 		}
 
@@ -1204,8 +1215,17 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe)
 		DWORD lastError = ::GetLastError();
 
 		::CloseHandle(hPipe);
+		::CloseHandle(hStderrPipe);
 
 		return lastError ? lastError : E_FAIL;
+	}
+
+	BOOL connectedStderr = ::ConnectNamedPipe(hStderrPipe, NULL) ? TRUE : (::GetLastError() == ERROR_PIPE_CONNECTED);
+	if (!connectedStderr) {
+		DWORD lastError = ::GetLastError();
+		::CloseHandle(hStderrPipe);
+
+		std::wcerr << L"Warning: failed to connect to stderr pipe: " << lastError << std::endl;
 	}
 
 	if (!hOutput) {
@@ -1221,18 +1241,57 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::wstring namedPipe)
 		std::unique_ptr<BYTE[]> buf(new BYTE[buflen]);
 
 		__int64 totalBytes = 0;
-		for (;;) {
+		while (hInput && hOutput) {
 			DWORD dwBytesRead = 0;
-			if (!::ReadFile(hInput, buf.get(), buflen, &dwBytesRead, nullptr)) {
+			if (hInput && !::ReadFile(hInput, buf.get(), buflen, &dwBytesRead, nullptr)) {
 				DWORD err = ::GetLastError();
-				break;
+				hInput = nullptr;
+				hOutput = nullptr;
 			}
 			DWORD dwBytesWritten = 0;
-			if (!::WriteFile(hOutput, buf.get(), dwBytesRead, &dwBytesWritten, nullptr)) {
+			if (dwBytesRead && hOutput && !::WriteFile(hOutput, buf.get(), dwBytesRead, &dwBytesWritten, nullptr)) {
 				DWORD err = ::GetLastError();
-				break;
+				hInput = nullptr;
+				hOutput = nullptr;
 			}
 			totalBytes += dwBytesWritten;
+
+			{
+				DWORD dwBytesRead = 0;
+				DWORD dwBytesAvail = 0;
+				DWORD dwBytesInMessage = 0;
+				do {
+					dwBytesRead = 0;
+					dwBytesAvail = 0;
+					dwBytesInMessage = 0;
+
+					if (!::PeekNamedPipe(hStderrPipe, nullptr, 0, &dwBytesRead, &dwBytesAvail, &dwBytesInMessage)) {
+						break;
+					}
+
+					if (0 == dwBytesAvail) {
+						break;
+					}
+
+					dwBytesRead = 0;
+					if (!::ReadFile(hStderrPipe, buf.get(), min(dwBytesAvail, buflen - 1), &dwBytesRead, nullptr)) {
+						DWORD err = ::GetLastError();
+						::CloseHandle(hStderrPipe);
+						hStderrPipe = nullptr;
+						break;
+					}
+
+					if (dwBytesRead > 0) {
+						dwBytesAvail -= dwBytesRead;
+
+						*(buf.get() + dwBytesRead) = 0;
+
+						auto szErr = (const char*)buf.get();
+
+						std::wcerr << szErr << std::flush;
+					}
+				} while (dwBytesAvail > 0);
+			}
 		}
 	}
 
@@ -1335,18 +1394,28 @@ HRESULT Run(params p)
 	hr = vd.Create();
 	if (!SUCCEEDED(hr)) {
 		if (E_ACCESSDENIED == hr && !p.flags.noelevate) {
-			std::wcerr << L"Run failed with E_ACCESSDENIED; attempting to elevate and redirect io..." << std::endl;
-
+			std::wcerr << L"Run failed with E_ACCESSDENIED!" << std::endl;
+			std::wcerr << L"Attempting to elevate and redirect io..." << std::endl;
 
 			std::wstring namedPipe;
 			{
 				std::wostringstream o;
-				o << LR"(\\.\pipe\mssqlPipe_)" << p.instance << p.device;
+				o << LR"(\\.\pipe\mssqlPipe_)" << L"stdio_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << L"_" << p.device.substr(1, 8);
 				namedPipe = o.str();
+			}
+
+			std::wstring stderrPipe;
+			{
+				std::wostringstream o;
+				o << LR"(\\.\pipe\mssqlPipe_)" << L"stderr_" << std::setfill(L'0') << std::setw(8) << std::hex << ::GetCurrentProcessId() << std::dec << L"_" << p.device.substr(1, 8);
+				stderrPipe = o.str();
 			}
 
 			HANDLE hInput = nullptr;
 			HANDLE hOutput = nullptr;
+
+			p.flags.noelevate = true;
+			p.flags.tee = stderrPipe;
 			
 			if (p.isBackup()) {
 				hOutput = hFile;
@@ -1366,15 +1435,12 @@ HRESULT Run(params p)
 				}
 			}
 
-			hr = Elevate(p, hInput, hOutput, namedPipe);
+			hr = Elevate(p, hInput, hOutput, namedPipe, stderrPipe);
 			if (!SUCCEEDED(hr)) {
-				return hr;
+				// oh no
 			}
 		}
-		return hr;
-	}
-	
-	if (p.isBackup()) {
+	} else if (p.isBackup()) {
 		hr = RunBackup(vd, p, hFile);
 	}
 	else if (p.isRestore()) {
@@ -1414,10 +1480,41 @@ int wmain(int argc, wchar_t* argv[])
 		::Sleep(10000);
 	}
 #endif
+
+	struct TeeAndRedirect_wcerr
+	{
+		TeeAndRedirect_wcerr(const wchar_t* fileName)
+			: out(fileName, std::ios::out)
+			, wcerrbuf(std::wcerr.rdbuf())
+			, tee(wcerrbuf, out.rdbuf())
+		{
+			std::wcerr.rdbuf(&tee);
+		}
+
+		~TeeAndRedirect_wcerr()
+		{
+			std::wcerr.rdbuf(wcerrbuf);
+		}
+
+		std::wofstream out;
+		std::basic_streambuf<wchar_t>* wcerrbuf = nullptr;
+		wteebuf tee;
+	};
 		
 	std::wcerr << L"\nmssqlPipe " << mssqlPipe_Version << L"\n" << std::endl;
 
 	params p = ParseParams(argc, argv, false);
+
+	std::unique_ptr<TeeAndRedirect_wcerr> pTeeAndRedirectWcerr;
+
+	if (!p.flags.tee.empty()) {
+		if (0 == p.flags.tee.find(LR"(\\.\pipe\mssqlPipe_)")) {
+			::WaitNamedPipe(p.flags.tee.c_str(), NMPWAIT_USE_DEFAULT_WAIT);
+		}
+		pTeeAndRedirectWcerr = std::make_unique<TeeAndRedirect_wcerr>(p.flags.tee.c_str());
+
+		std::wcerr << L"tee stderr to " << p.flags.tee << std::endl;
+	}
 
 	if (p.flags.test) {
 #ifdef _DEBUG
@@ -1433,6 +1530,8 @@ int wmain(int argc, wchar_t* argv[])
 	if (E_ACCESSDENIED == p.hr) {
 		std::wcerr << L"Run failed with E_ACCESSDENIED; mssqlPipe may need to run as an administrator." << std::endl;
 	}
+
+	pTeeAndRedirectWcerr.reset();
 
 #ifdef _DEBUG
 	::Sleep(5000);

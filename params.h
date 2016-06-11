@@ -10,6 +10,7 @@ struct paramflags
 {
 	bool noelevate = false;
 	bool test = false;
+	std::wstring tee;
 };
 
 struct params

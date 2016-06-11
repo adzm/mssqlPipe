@@ -499,6 +499,11 @@ params ParseParams(int argc, wchar_t* argv[], bool quiet)
 				flags.noelevate = true;
 			} else if (iequals(arg, L"--test")) {
 				flags.test = true;
+			} else if (iequals(arg, L"--tee")) {
+				++i;
+				if (i < argc) {
+					flags.tee = argv[i];
+				}
 			} else {
 				args.push_back(arg);
 			}
@@ -536,6 +541,10 @@ std::wstring MakeParams(const params& p)
 	}
 	if (p.flags.test) {
 		append(L"--test");
+	}
+	if (!p.flags.tee.empty()) {
+		append(L"--tee");
+		append(p.flags.tee);
 	}
 
 	if (!p.instance.empty()) {
