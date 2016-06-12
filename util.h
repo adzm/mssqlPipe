@@ -63,7 +63,7 @@ inline std::string narrow(const wchar_t* sz, size_t length)
 
 	int ret = ::WideCharToMultiByte(
 		CP_UTF8
-		, WC_NO_BEST_FIT_CHARS | WC_COMPOSITECHECK | WC_DEFAULTCHAR // WC_ERR_INVALID_CHARS
+		, 0 // WC_ERR_INVALID_CHARS
 		, sz
 		, length
 		, (char*)nullptr
@@ -90,7 +90,7 @@ inline std::string narrow(const wchar_t* sz, size_t length)
 
 	ret = ::WideCharToMultiByte(
 		CP_UTF8
-		, WC_NO_BEST_FIT_CHARS | WC_COMPOSITECHECK | WC_DEFAULTCHAR
+		, 0 // WC_ERR_INVALID_CHARS
 		, sz
 		, length
 		, (char*)&str[0]
