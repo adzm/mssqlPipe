@@ -41,9 +41,11 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(IncludePath);$(ProjectDir)</IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(IncludePath);$(ProjectDir)</IncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -76,6 +78,22 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="nowide\args.hpp" />
+    <ClInclude Include="nowide\cenv.hpp" />
+    <ClInclude Include="nowide\config.hpp" />
+    <ClInclude Include="nowide\convert.hpp" />
+    <ClInclude Include="nowide\cstdio.hpp" />
+    <ClInclude Include="nowide\cstdlib.hpp" />
+    <ClInclude Include="nowide\encoding_errors.hpp" />
+    <ClInclude Include="nowide\encoding_utf.hpp" />
+    <ClInclude Include="nowide\filebuf.hpp" />
+    <ClInclude Include="nowide\fstream.hpp" />
+    <ClInclude Include="nowide\iostream.hpp" />
+    <ClInclude Include="nowide\scoped_ptr.hpp" />
+    <ClInclude Include="nowide\stackstring.hpp" />
+    <ClInclude Include="nowide\system.hpp" />
+    <ClInclude Include="nowide\utf.hpp" />
+    <ClInclude Include="nowide\windows.hpp" />
     <ClInclude Include="params.h" />
     <ClInclude Include="pipestat.h" />
     <ClInclude Include="stdafx.h" />
@@ -86,6 +104,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="mssqlPipe.cpp" />
+    <ClCompile Include="nowide\iostream.cpp" />
     <ClCompile Include="params.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

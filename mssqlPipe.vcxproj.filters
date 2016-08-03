@@ -16,6 +16,9 @@
     <Filter Include="Header Files\vdi">
       <UniqueIdentifier>{0e6981eb-04f7-46cc-b8e4-4ef142076332}</UniqueIdentifier>
     </Filter>
+    <Filter Include="nowide">
+      <UniqueIdentifier>{4584837c-1d76-4b8c-aa95-e86de4b0ba43}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stdafx.h">
@@ -39,6 +42,54 @@
     <ClInclude Include="pipestat.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="nowide\args.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\cenv.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\config.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\convert.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\cstdio.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\cstdlib.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\encoding_errors.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\encoding_utf.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\filebuf.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\fstream.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\iostream.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\scoped_ptr.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\stackstring.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\system.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\utf.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
+    <ClInclude Include="nowide\windows.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -49,6 +100,9 @@
     </ClCompile>
     <ClCompile Include="params.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="nowide\iostream.cpp">
+      <Filter>nowide</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

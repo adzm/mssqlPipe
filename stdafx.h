@@ -47,5 +47,9 @@
 
 #include <assert.h>
 
+#include <nowide/iostream.hpp>
+#include <nowide/convert.hpp>
+
+
 
 

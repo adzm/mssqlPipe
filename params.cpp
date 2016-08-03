@@ -7,7 +7,7 @@
 
 void showUsage()
 {
-	std::cerr << R"(
+	nowide::cerr << R"(
 Usage:
 
 mssqlPipe [instance] [as username[:password]] (backup|restore|pipe) ... 
@@ -33,7 +33,7 @@ mssqlPipe pipe to VirtualDevice42 < input.bak
 Happy piping!
 )";
 
-	std::cerr << std::endl;
+	nowide::cerr << std::endl;
 }
 
 inline std::string escapeCommandLine(std::string str)
@@ -153,13 +153,13 @@ params ParseSqlParams(int argc, const char* argv[], bool quiet)
 	auto invalidArgs = [&](const char* msg, const char* arg = nullptr, HRESULT hr = E_INVALIDARG)
 	{
 		if (!quiet) {
-			std::cerr << msg;
+			nowide::cerr << msg;
 
 			if (arg && *arg) {
-				std::cerr << " `" << arg << "`";
+				nowide::cerr << " `" << arg << "`";
 			}
 
-			std::cerr << std::endl;
+			nowide::cerr << std::endl;
 
 			showUsage();
 		}
@@ -675,22 +675,22 @@ bool TestParseParams()
 
 		if (!succeeded || !matches || !rebuilt_matches) {
 			if (!succeeded) {
-				std::cerr << "FAILED! " << p.errorMessage << " (0x" << std::hex << p.hr << std::dec << ")" << std::endl;
+				nowide::cerr << "FAILED! " << p.errorMessage << " (0x" << std::hex << p.hr << std::dec << ")" << std::endl;
 			}
 			if (!matches) {
-				std::cerr << "MISMATCH! " << makeCommandLineDiff(cmdLine, rebuilt) << std::endl;
+				nowide::cerr << "MISMATCH! " << makeCommandLineDiff(cmdLine, rebuilt) << std::endl;
 			}
 			if (!rebuilt_matches) {
-				std::cerr << "REBUILT MISMATCH! " << makeCommandLineDiff(rebuilt, p_rebuilt_rebuilt) << std::endl;
+				nowide::cerr << "REBUILT MISMATCH! " << makeCommandLineDiff(rebuilt, p_rebuilt_rebuilt) << std::endl;
 			}
-			std::cerr << ">\t`" << cmdLine << "`" << std::endl;
-			std::cerr << "<\t`" << rebuilt << "`" << std::endl;
-			std::cerr << "=\t" << p << std::endl;
+			nowide::cerr << ">\t`" << cmdLine << "`" << std::endl;
+			nowide::cerr << "<\t`" << rebuilt << "`" << std::endl;
+			nowide::cerr << "=\t" << p << std::endl;
 			if (!rebuilt_matches) {
-				std::cerr << "*<\t`" << p_rebuilt_rebuilt << "`" << std::endl;
-				std::cerr << "*=\t" << p_rebuilt << std::endl;
+				nowide::cerr << "*<\t`" << p_rebuilt_rebuilt << "`" << std::endl;
+				nowide::cerr << "*=\t" << p_rebuilt << std::endl;
 			}
-			std::cerr << std::endl;
+			nowide::cerr << std::endl;
 			return false;
 		}
 

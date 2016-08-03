@@ -37,15 +37,29 @@ struct InputFile
 		if (!membuf) {
 			return;
 		}
+
+		DWORD bytesRead = 0;
+
+		while (bytesRead < membufReserved) {
+			DWORD dwBytes = 0;
+			BOOL ret = ::ReadFile(hFile, membuf.get() + bytesRead, membufReserved - bytesRead, &dwBytes, nullptr);
+			bytesRead += dwBytes;
+			if (!ret || (dwBytes == 0)) {
+				break;
+			}
+		}
+
+		membufLen = bytesRead;
 	}
 
 	HRESULT resetPos()
 	{
 		if (streamPos > membufLen) {
+			assert(false);
 			return E_FAIL;
 		}
 
-		membufPos = 0;
+		streamPos = 0;
 		return S_OK;
 	}
 
@@ -54,33 +68,16 @@ struct InputFile
 		DWORD totalRead = 0;
 		if (membuf) {
 			// if first read, fill the buffer
-			if (membufLen == 0 && membufPos == 0 && streamPos == 0 && membufReserved != 0) {
-				DWORD bytesRead = 0;
-
-				while (bytesRead < membufReserved) {
-					DWORD dwBytes = 0;
-					BOOL ret = ::ReadFile(hFile, membuf.get() + bytesRead, membufReserved - bytesRead, &dwBytes, nullptr);
-					bytesRead += dwBytes;
-					if (!ret || (dwBytes == 0)) {
-						break;
-					}
-				}
-
-				streamPos += bytesRead;
-
-				membufLen = bytesRead;
-				membufPos = 0;
+			if (membufLen == 0 && streamPos == 0 && membufReserved != 0) {
+				fillBuffer();
 			}
 
-			DWORD membufAvail = membufLen - membufPos;
+			if (streamPos < membufLen) {
+				DWORD bytesInBuf = (membufLen - streamPos);
+				DWORD bytesToRead = min(len, bytesInBuf);
 
-			if (membufAvail) {
-				DWORD bytesToRead = len;
-				if (bytesToRead > membufAvail) {
-					bytesToRead = membufAvail;
-				}
-				memcpy(buf, membuf.get() + membufPos, bytesToRead);
-				membufPos += bytesToRead;
+				memcpy(buf, membuf.get() + streamPos, bytesToRead);
+				streamPos += bytesToRead;
 				totalRead += bytesToRead;
 
 				len -= bytesToRead;
@@ -90,20 +87,18 @@ struct InputFile
 				membuf.reset();
 			}
 		}
-
-		DWORD streamRead = 0;
-
-		while (streamRead < len) {
+		
+		while (len > 0) {
 			DWORD dwBytes = 0;
 			BOOL ret = ::ReadFile(hFile, buf, len, &dwBytes, nullptr);
-			streamRead += dwBytes;
+			streamPos += dwBytes;
+			totalRead += dwBytes;
+			len -= dwBytes;
+			buf += dwBytes;
 			if (!ret || (dwBytes == 0)) {
 				break;
 			}
 		}
-
-		streamPos += streamRead;
-		totalRead += streamRead;
 
 		return totalRead;
 	}
@@ -113,7 +108,6 @@ protected:
 	std::unique_ptr<BYTE[]> membuf;
 	size_t membufReserved = 0;
 	size_t membufLen = 0;
-	size_t membufPos = 0;
 	size_t streamPos = 0;
 };
 
@@ -158,7 +152,7 @@ HRESULT processPipeRestore(IClientVirtualDevice* pDevice, InputFile& file, bool 
 
 	if (!quiet) {			
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::cerr << "\nProcessing... " << std::endl;
+		nowide::cerr << "\nProcessing... " << std::endl;
 	}
 
 	pipestat ps(outputMutex_, quiet);
@@ -195,7 +189,8 @@ HRESULT processPipeRestore(IClientVirtualDevice* pDevice, InputFile& file, bool 
 		switch (pCmd->commandCode) {
 		case VDC_Read:
 			while (bytesTransferred < pCmd->size) {
-				bytesTransferred += file.read(pCmd->buffer + bytesTransferred, pCmd->size - bytesTransferred);
+				DWORD len = file.read(pCmd->buffer + bytesTransferred, pCmd->size - bytesTransferred);
+				bytesTransferred += len;
 			}
 
 			break;
@@ -235,7 +230,7 @@ HRESULT processPipeBackup(IClientVirtualDevice* pDevice, OutputFile& file, bool 
 
 	if (!quiet) {			
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::cerr << "\nProcessing... " << std::endl;
+		nowide::cerr << "\nProcessing... " << std::endl;
 	}
 
 	pipestat ps(outputMutex_, quiet);
@@ -275,7 +270,8 @@ HRESULT processPipeBackup(IClientVirtualDevice* pDevice, OutputFile& file, bool 
 			break;
 		case VDC_Write:
 			while (bytesTransferred < pCmd->size) {
-				bytesTransferred += file.write(pCmd->buffer + bytesTransferred, pCmd->size - bytesTransferred);
+				DWORD len = file.write(pCmd->buffer + bytesTransferred, pCmd->size - bytesTransferred);
+				bytesTransferred += len;
 			}
 			break;
 		case VDC_Flush:
@@ -352,7 +348,7 @@ struct VirtualDevice
 		hr = pSet.CreateInstance(CLSID_MSSQL_ClientVirtualDeviceSet);
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::cerr << "Failed to cocreate device set: " << std::hex << hr << std::dec << std::endl;
+			nowide::cerr << "Failed to cocreate device set: " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 
@@ -361,7 +357,7 @@ struct VirtualDevice
 		hr = pSet->CreateEx(wInstance, name.c_str(), &config);
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::cerr << "Failed to create device set: " << std::hex << hr << std::dec << std::endl;
+			nowide::cerr << "Failed to create device set: " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 		else {			
@@ -378,7 +374,7 @@ struct VirtualDevice
 		if (!SUCCEEDED(hr)) {
 			pSet->Close();
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::cerr << "Failed to initialize backup operation: " << std::hex << hr << std::dec << std::endl;
+			nowide::cerr << "Failed to initialize backup operation: " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 
@@ -386,7 +382,7 @@ struct VirtualDevice
 		if (!SUCCEEDED(hr)) {
 			pSet->Close();
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::cerr << "Failed to open backup device: " << std::hex << hr << std::dec << std::endl;
+			nowide::cerr << "Failed to open backup device: " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 
@@ -502,9 +498,9 @@ ADODB::_ConnectionPtr Connect(std::string connectionString)
 	}
 	catch (_com_error& e) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::cerr << "Could not connect to " << connectionString << std::endl;
-		std::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
-		std::cerr << e.Description() << std::endl;
+		nowide::cerr << "Could not connect to " << connectionString << std::endl;
+		nowide::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
+		nowide::cerr << e.Description() << std::endl;
 
 		return nullptr;
 	}
@@ -529,13 +525,13 @@ void traceAdoErrors(ADODB::_Connection* pCon)
 			if (!error) {
 				continue;
 			}
-			std::cerr
+			nowide::cerr
 				<< error->Description
 				<< "\t" << std::hex << error->Number << std::dec
 				<< "\t" << error->NativeError
 				<< "\t" << error->SQLState
 				<< std::endl;
-			//std::cerr 
+			//nowide::cerr 
 			//	<< "[" << i << "]"
 			//	<< "\t" << std::hex << error->Number << std::dec
 			//	<< "\t" << error->NativeError
@@ -569,13 +565,13 @@ void traceAdoRecordset(ADODB::_Recordset* pRs)
 		}
 		auto name = field->Name;
 		if (!name.length()) {
-			std::cerr << "\t[" << x << "]";
+			nowide::cerr << "\t[" << x << "]";
 		}
 		else {
-			std::cerr << "\t[" << field->Name << "]";
+			nowide::cerr << "\t[" << field->Name << "]";
 		}
 	}
-	std::cerr << std::endl;
+	nowide::cerr << std::endl;
 
 	while (!pRs->eof) {
 		for (long x = 0; x < count; ++x) {
@@ -589,16 +585,16 @@ void traceAdoRecordset(ADODB::_Recordset* pRs)
 			}
 
 			if (SUCCEEDED(hrChange) && var.vt == VT_BSTR) {
-				std::cerr << "\t" << var.bstrVal;
+				nowide::cerr << "\t" << var.bstrVal;
 			}
 			else if (var.vt == VT_NULL) {
-				std::cerr << "\t";
+				nowide::cerr << "\t";
 			}
 			else {
-				std::cerr << "\t?";
+				nowide::cerr << "\t?";
 			}
 		}
-		std::cerr << std::endl;
+		nowide::cerr << std::endl;
 		pRs->MoveNext();
 	}
 }
@@ -663,8 +659,8 @@ HRESULT RunPrepareRestoreDatabase(VirtualDevice& vd, params p, InputFile& inputF
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
-			std::cerr << e.Description() << std::endl;
+			nowide::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
+			nowide::cerr << e.Description() << std::endl;
 			return e.Error();
 		}
 	});
@@ -724,8 +720,8 @@ select
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
-			std::cerr << e.Description() << std::endl;
+			nowide::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
+			nowide::cerr << e.Description() << std::endl;
 			return e.Error();
 		}
 	});
@@ -766,7 +762,7 @@ HRESULT RunRestoreDatabase(VirtualDevice& vd, params p, std::string sql, InputFi
 
 	if (!quiet) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::cerr << "Restoring via virtual device " << p.device << std::endl;
+		nowide::cerr << "Restoring via virtual device " << p.device << std::endl;
 	}
 	
 	auto pipeResult = std::async([&vd, &inputFile, &p, quiet]{
@@ -807,8 +803,8 @@ HRESULT RunRestoreDatabase(VirtualDevice& vd, params p, std::string sql, InputFi
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
-			std::cerr << e.Description() << std::endl;
+			nowide::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
+			nowide::cerr << e.Description() << std::endl;
 			return e.Error();
 		}
 	});
@@ -899,7 +895,7 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 
 	InputFile inputFile(hFile, 0x10000);
 
-	if (iequals(p.subcommand, "filelistonly")) {
+	if(iequals(p.subcommand, "filelistonly")) {
 		
 		std::ostringstream o;
 		o << "restore filelistonly from virtual_device=N'" << escape(p.device) << "';";
@@ -908,7 +904,7 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 	
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::cerr << "RunRestoreDatabase generic failed with " << std::hex << hr << std::dec << std::endl;
+			nowide::cerr << "RunRestoreDatabase generic failed with " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 
@@ -932,7 +928,7 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 		hr = RunPrepareRestoreDatabase(altvd, altp, inputFile, dataPath, logPath, fileList, true);
 		if (!SUCCEEDED(hr)) {
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::cerr << "RunRestoreFileListOnly failed with " << std::hex << hr << std::dec << std::endl;
+			nowide::cerr << "RunRestoreFileListOnly failed with " << std::hex << hr << std::dec << std::endl;
 			return hr;
 		}
 	}
@@ -940,7 +936,7 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 	hr = inputFile.resetPos();
 	if (!SUCCEEDED(hr)) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::cerr << "RunRestore failed to reset buffered input pos with " << std::hex << hr << std::dec << std::endl;
+		nowide::cerr << "RunRestore failed to reset buffered input pos with " << std::hex << hr << std::dec << std::endl;
 		return hr;
 	}
 	
@@ -950,7 +946,7 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 	
 	if (!SUCCEEDED(hr)) {
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::cerr << "RunRestoreDatabase failed with " << std::hex << hr << std::dec << std::endl;
+		nowide::cerr << "RunRestoreDatabase failed with " << std::hex << hr << std::dec << std::endl;
 		return hr;
 	}
 
@@ -973,7 +969,7 @@ HRESULT RunBackup(VirtualDevice& vd, params p, HANDLE hFile)
 
 	{
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::cerr << "Backing up via virtual device " << p.device << std::endl;
+		nowide::cerr << "Backing up via virtual device " << p.device << std::endl;
 	}
 
 	OutputFile outputFile(hFile);
@@ -1016,8 +1012,8 @@ HRESULT RunBackup(VirtualDevice& vd, params p, HANDLE hFile)
 		}
 		catch (_com_error& e) {			
 			std::unique_lock<std::mutex> lock(outputMutex_);
-			std::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
-			std::cerr << e.Description() << std::endl;
+			nowide::cerr << std::hex << e.Error() << std::dec << ": " << e.ErrorMessage() << std::endl;
+			nowide::cerr << e.Description() << std::endl;
 			return e.Error();
 		}
 	});
@@ -1047,7 +1043,7 @@ HRESULT RunPipe(VirtualDevice& vd, params p, HANDLE hFile)
 
 	{
 		std::unique_lock<std::mutex> lock(outputMutex_);
-		std::cerr << "Piping " << p.subcommand << " virtual device " << p.device << std::endl;
+		nowide::cerr << "Piping " << p.subcommand << " virtual device " << p.device << std::endl;
 	}
 
 	// in pipe mode, use a much larger than the default timeout, say 5 minutes
@@ -1085,12 +1081,12 @@ HRESULT RunPipe(VirtualDevice& vd, params p, HANDLE hFile)
 HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::string namedPipe, std::string stderrPipe)
 {
 	if (!hInput && !hOutput) {
-		std::cerr << "Invalid command for elevation" << std::endl;
+		nowide::cerr << "Invalid command for elevation" << std::endl;
 		return E_FAIL;
 	}
 	
 	HANDLE hPipe = ::CreateNamedPipe(widen(namedPipe).c_str()
-		, hOutput ? PIPE_ACCESS_INBOUND : PIPE_ACCESS_OUTBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE
+		, (hOutput ? PIPE_ACCESS_INBOUND : PIPE_ACCESS_OUTBOUND) | FILE_FLAG_FIRST_PIPE_INSTANCE
 		, PIPE_TYPE_BYTE | PIPE_WAIT
 		, 1
 		, 0x10000
@@ -1154,10 +1150,10 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::string namedPipe, 
 		DWORD lastError = ::GetLastError();
 		::CloseHandle(hStderrPipe);
 
-		std::cerr << "Warning: failed to connect to stderr pipe: " << lastError << std::endl;
+		nowide::cerr << "Warning: failed to connect to stderr pipe: " << lastError << std::endl;
 	}
 
-	std::cerr << "Piping with elevated process id " << ::GetProcessId(hProcess) << "!" << std::endl;
+	nowide::cerr << "Piping with elevated process id " << ::GetProcessId(hProcess) << "!" << std::endl;
 
 	if (!hOutput) {
 		hOutput = hPipe;
@@ -1174,13 +1170,24 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::string namedPipe, 
 		__int64 totalBytes = 0;
 		while (hInput && hOutput) {
 			DWORD dwBytesRead = 0;
-			if (hInput && !::ReadFile(hInput, buf.get(), buflen, &dwBytesRead, nullptr)) {
-				DWORD err = ::GetLastError();
-				hInput = nullptr;
-				hOutput = nullptr;
+			if (hInput) {
+				BOOL ret = ::ReadFile(hInput, buf.get(), buflen, &dwBytesRead, nullptr);
+				if (!ret || (0 == dwBytesRead)) {
+					DWORD err = ::GetLastError();
+					hInput = nullptr;
+					hOutput = nullptr;
+				}
 			}
 			DWORD dwBytesWritten = 0;
-			if (dwBytesRead && hOutput && !::WriteFile(hOutput, buf.get(), dwBytesRead, &dwBytesWritten, nullptr)) {
+			if (dwBytesRead && hOutput) {
+				BOOL ret = ::WriteFile(hOutput, buf.get(), dwBytesRead, &dwBytesWritten, nullptr);
+				if (!ret || (0 == dwBytesWritten)) {
+					DWORD err = ::GetLastError();
+					hInput = nullptr;
+					hOutput = nullptr;
+				}
+			}
+			if (dwBytesRead != dwBytesWritten) {
 				DWORD err = ::GetLastError();
 				hInput = nullptr;
 				hOutput = nullptr;
@@ -1219,7 +1226,7 @@ HRESULT Elevate(params p, HANDLE hInput, HANDLE hOutput, std::string namedPipe, 
 
 						auto szErr = (const char*)buf.get();
 
-						std::cerr << szErr << std::flush;
+						nowide::cerr << szErr << std::flush;
 					}
 				} while (dwBytesAvail > 0);
 			}
@@ -1262,7 +1269,7 @@ HRESULT Run(params p)
 			hFile = ::CreateFile(widen(p.to).c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 			if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 				DWORD ret = ::GetLastError();
-				std::cerr << ret << ": Failed to open " << p.to << std::endl;
+				nowide::cerr << ret << ": Failed to open " << p.to << std::endl;
 				return E_FAIL;
 			}
 		}
@@ -1271,7 +1278,7 @@ HRESULT Run(params p)
 		if (!p.to.empty() && INVALID_FILE_ATTRIBUTES == ::GetFileAttributes(widen(p.to).c_str())) {
 			int ret = ::SHCreateDirectoryEx(nullptr, widen(p.to).c_str(), nullptr);
 			if (ret && ret != ERROR_FILE_EXISTS && ret != ERROR_ALREADY_EXISTS) {
-				std::cerr << ret << ": Failed to create restore to path. Continuing (SQL Server may have access)... " << p.from << std::endl;
+				nowide::cerr << ret << ": Failed to create restore to path. Continuing (SQL Server may have access)... " << p.from << std::endl;
 			}
 		}
 		if (p.from.empty()) {
@@ -1281,7 +1288,7 @@ HRESULT Run(params p)
 			hFile = ::CreateFile(widen(p.from).c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 			if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 				DWORD ret = ::GetLastError();
-				std::cerr << ret << ": Failed to open " << p.from << std::endl;
+				nowide::cerr << ret << ": Failed to open " << p.from << std::endl;
 				return E_FAIL;
 			}
 		}
@@ -1295,7 +1302,7 @@ HRESULT Run(params p)
 				hFile = ::CreateFile(widen(p.from).c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 				if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 					DWORD ret = ::GetLastError();
-					std::cerr << ret << ": Failed to open " << p.from << std::endl;
+					nowide::cerr << ret << ": Failed to open " << p.from << std::endl;
 					return E_FAIL;
 				}
 			}
@@ -1308,7 +1315,7 @@ HRESULT Run(params p)
 				hFile = ::CreateFile(widen(p.to).c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 				if (!hFile || INVALID_HANDLE_VALUE == hFile) {
 					DWORD ret = ::GetLastError();
-					std::cerr << ret << ": Failed to open " << p.to << std::endl;
+					nowide::cerr << ret << ": Failed to open " << p.to << std::endl;
 					return E_FAIL;
 				}
 			}
@@ -1316,7 +1323,7 @@ HRESULT Run(params p)
 	}
 
 	if (!hFile) {
-		std::cerr << "missing file" << std::endl;
+		nowide::cerr << "missing file" << std::endl;
 		return E_FAIL;
 	}
 
@@ -1326,8 +1333,8 @@ HRESULT Run(params p)
 	hr = vd.Create();
 	if (!SUCCEEDED(hr)) {
 		if (E_ACCESSDENIED == hr && !p.flags.noelevate) {
-			std::cerr << "Run failed with E_ACCESSDENIED!" << std::endl;
-			std::cerr << "Attempting to elevate and redirect io..." << std::endl;
+			nowide::cerr << "Run failed with E_ACCESSDENIED!" << std::endl;
+			nowide::cerr << "Attempting to elevate and redirect io..." << std::endl;
 
 			std::string unique = make_guid().substr(1, 8);
 
@@ -1384,7 +1391,7 @@ HRESULT Run(params p)
 		hr = RunPipe(vd, p, hFile);
 	}
 	else {		
-		std::cerr << "unexpected command " << p.command << std::endl;
+		nowide::cerr << "unexpected command " << p.command << std::endl;
 		hr = E_FAIL;
 	}
 	
@@ -1411,10 +1418,9 @@ int wmain(int argc, wchar_t* wargv[])
 	const char** argv = (const char**)&u8argptrs[0];
 
 #ifdef _DEBUG
-	bool waitForDebugger = true;
-	waitForDebugger = false;
+	bool waitForDebugger = false;
 	if (waitForDebugger && !::IsDebuggerPresent()) {
-		std::cerr << "Waiting for debugger..." << std::endl;
+		nowide::cerr << "Waiting for debugger..." << std::endl;
 		::Sleep(10000);
 	}
 #endif
@@ -1423,15 +1429,15 @@ int wmain(int argc, wchar_t* wargv[])
 	{
 		TeeAndRedirect_cerr(const char* fileName)
 			: out(widen(fileName), std::ios::out)
-			, cerrbuf(std::cerr.rdbuf())
+			, cerrbuf(nowide::cerr.rdbuf())
 			, tee(cerrbuf, out.rdbuf())
 		{
-			std::cerr.rdbuf(&tee);
+			nowide::cerr.rdbuf(&tee);
 		}
 
 		~TeeAndRedirect_cerr()
 		{
-			std::cerr.rdbuf(cerrbuf);
+			nowide::cerr.rdbuf(cerrbuf);
 		}
 
 		std::ofstream out;
@@ -1439,8 +1445,8 @@ int wmain(int argc, wchar_t* wargv[])
 		teebuf tee;
 	};
 		
-	std::cerr << "\nmssqlPipe " << mssqlPipe_Version << "\n" << std::endl;
-
+	nowide::cerr << "\nmssqlPipe " << mssqlPipe_Version << "\n" << std::endl;
+	
 	params p = ParseParams(argc, argv, false);
 
 	std::unique_ptr<TeeAndRedirect_cerr> pTeeAndRedirectCerr;
@@ -1451,7 +1457,7 @@ int wmain(int argc, wchar_t* wargv[])
 		}
 		pTeeAndRedirectCerr = std::make_unique<TeeAndRedirect_cerr>(p.flags.tee.c_str());
 
-		std::cerr << "tee stderr to " << p.flags.tee << std::endl;
+		nowide::cerr << "tee stderr to " << p.flags.tee << std::endl;
 	}
 
 	if (p.flags.test) {
@@ -1466,13 +1472,15 @@ int wmain(int argc, wchar_t* wargv[])
 	}
 
 	if (E_ACCESSDENIED == p.hr) {
-		std::cerr << "Run failed with E_ACCESSDENIED; mssqlPipe may need to run as an administrator." << std::endl;
+		nowide::cerr << "Run failed with E_ACCESSDENIED; mssqlPipe may need to run as an administrator." << std::endl;
 	}
 
 	pTeeAndRedirectCerr.reset();
 
 #ifdef _DEBUG
-	::Sleep(5000);
+	if (!SUCCEEDED(p.hr)) {
+		::Sleep(5000);
+	}
 #endif
 
 	return p.hr;

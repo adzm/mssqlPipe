@@ -76,12 +76,12 @@ struct pipestat
 		std::unique_lock<std::mutex> lock(outputMutex);
 
 		if (totalSeconds <= 1.0) {
-			std::cerr << prefix << std::setw(9) << static_cast<int>(totalKilobytes)
+			nowide::cerr << prefix << std::setw(9) << static_cast<int>(totalKilobytes)
 				<< " kb in " << " < 1 second"
 				<< std::endl;
 		}
 		else {
-			std::cerr << prefix << std::setw(9) << static_cast<int>(totalKilobytes)
+			nowide::cerr << prefix << std::setw(9) << static_cast<int>(totalKilobytes)
 				<< " kb in " << std::setw(4) << static_cast<int>(totalSeconds) << " seconds ("
 				<< std::setw(6) << static_cast<int>(kilobytesPerSec) << " kb/sec)"
 				<< std::endl;
