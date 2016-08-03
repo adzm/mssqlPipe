@@ -67,4 +67,4 @@ Please report and issues and feature requests!
 
 I was inspired by the VDI sample; and apparently so was [sqlpipe](https://github.com/duncansmart/sqlpipe)
 
-Happy piping!
+Happy piping! :rainbow:
