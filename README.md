@@ -2,6 +2,10 @@
 
 SQL Server command line backup and restore through pipes using stdin and stdout!
 
+## Download
+
+[For Windows Vista, 7, 8, 8.1, 10](https://github.com/adzm/mssqlPipe/releases/download/v1.2.1/mssqlPipe.exe)
+
 ## Features
 
 - Familiar T-SQL-like syntax.
@@ -9,6 +13,7 @@ SQL Server command line backup and restore through pipes using stdin and stdout!
 - Automatically renames and moves database files to a specified path.
 - Low-level pipe command for complex or customized usage.
 - Easily scriptable and automatable backup and restore; errorlevel is set appropriately on process exit.
+- [Single file with no dependencies or install necessary!](https://github.com/adzm/mssqlPipe/releases/download/v1.2.1/mssqlPipe.exe)
 
 ## Syntax
 
