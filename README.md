@@ -1,4 +1,4 @@
-# mssqlPipe v1.2.0
+# mssqlPipe v1.2.1
 
 SQL Server command line backup and restore through pipes using stdin and stdout!
 

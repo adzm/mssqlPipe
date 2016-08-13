@@ -8,7 +8,7 @@
 
 /****/
 
-constexpr auto mssqlPipe_Version = "1.2.0";
+constexpr auto mssqlPipe_Version = "1.2.1";
 
 /****/
 
@@ -191,6 +191,10 @@ HRESULT processPipeRestore(IClientVirtualDevice* pDevice, InputFile& file, bool 
 			while (bytesTransferred < pCmd->size) {
 				DWORD len = file.read(pCmd->buffer + bytesTransferred, pCmd->size - bytesTransferred);
 				bytesTransferred += len;
+				if (!len) {
+					hr = ::GetLastError();
+					break;
+				}
 			}
 
 			break;
@@ -207,7 +211,11 @@ HRESULT processPipeRestore(IClientVirtualDevice* pDevice, InputFile& file, bool 
 			break;
 		}
 
-		hr = pDevice->CompleteCommand(pCmd, completionCode, bytesTransferred, 0);
+		HRESULT hrComplete = pDevice->CompleteCommand(pCmd, completionCode, bytesTransferred, 0);
+
+		if (!hr || bytesTransferred > 0) {
+			hr = hrComplete;
+		}
 
 		ps.accumulate(bytesTransferred);
 
@@ -272,6 +280,10 @@ HRESULT processPipeBackup(IClientVirtualDevice* pDevice, OutputFile& file, bool 
 			while (bytesTransferred < pCmd->size) {
 				DWORD len = file.write(pCmd->buffer + bytesTransferred, pCmd->size - bytesTransferred);
 				bytesTransferred += len;
+				if (!len) {
+					hr = ::GetLastError();
+					break;
+				}
 			}
 			break;
 		case VDC_Flush:
@@ -284,14 +296,18 @@ HRESULT processPipeBackup(IClientVirtualDevice* pDevice, OutputFile& file, bool 
 			break;
 		}
 
-		hr = pDevice->CompleteCommand(pCmd, completionCode, bytesTransferred, 0);
+		HRESULT hrComplete = pDevice->CompleteCommand(pCmd, completionCode, bytesTransferred, 0);
+		
+		if (!hr || bytesTransferred > 0) {
+			hr = hrComplete;
+		}
+
+		ps.accumulate(bytesTransferred);
 
 		if (!SUCCEEDED(hr)) {
 			// error message?
 			break;
 		}
-
-		ps.accumulate(bytesTransferred);
 	}
 
 	ps.finalize();
