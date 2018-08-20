@@ -90,6 +90,9 @@
     <ClInclude Include="nowide\windows.hpp">
       <Filter>nowide</Filter>
     </ClInclude>
+    <ClInclude Include="nowide\utf8_codecvt.hpp">
+      <Filter>nowide</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
