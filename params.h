@@ -22,6 +22,7 @@ struct params
 	std::string device;
 	std::string from;
 	std::string to;
+	std::string sql;
 
 	std::string as;
 	std::string username;

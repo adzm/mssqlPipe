@@ -381,6 +381,14 @@ params ParseSqlParams(int argc, const char* argv[], bool quiet)
 			++arg;
 		}
 
+		// detect raw sql in place of database name
+		int placeholder = ToLower(p.database).find("{device}");
+		if (arg == argEnd && placeholder > 0) {
+			p.sql = p.database.replace(placeholder, 8, p.device);
+			p.database = "";
+			return p;
+		}
+
 		if (p.isBackup()) {
 
 			// to file
