@@ -130,7 +130,7 @@ inline std::string make_guid()
 	GUID guidRaw = { 0 };
 	::CoCreateGuid(&guidRaw);
 	::StringFromGUID2(guidRaw, guid, _countof(guid));
-	return narrow(guid, _countof(guid) - 1);
+	return narrow(guid);
 }
 
 template<typename _IIID>

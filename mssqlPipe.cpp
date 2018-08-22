@@ -956,7 +956,7 @@ HRESULT RunRestore(VirtualDevice& vd, params p, HANDLE hFile)
 		return hr;
 	}
 	
-	auto sql = BuildRestoreCommand(p, dataPath, logPath, fileList);
+	auto sql = p.sql.empty() ? BuildRestoreCommand(p, dataPath, logPath, fileList) : p.sql;
 
 	hr = RunRestoreDatabase(vd, p, sql, inputFile, false);
 	
@@ -976,11 +976,16 @@ HRESULT RunBackup(VirtualDevice& vd, params p, HANDLE hFile)
 	std::string connectionString = MakeConnectionString(p.instance, p.username, p.password);
 
 	std::string sql;
+	if (p.sql.empty())
 	{
 		std::ostringstream o;
 		// always do copy_only, could be an option in the future
 		o << "backup database [" << escape(p.database) << "] to virtual_device=N'" << escape(p.device) << "' with copy_only;";
 		sql = o.str();
+	}
+	else
+	{
+		sql = p.sql;
 	}
 
 	{
